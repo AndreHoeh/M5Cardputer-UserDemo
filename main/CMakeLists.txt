@@ -23,5 +23,6 @@ file(GLOB EXTERN_FILES assets/*)
 
 idf_component_register(SRCS "main.cpp" ${MY_SRCS}
                     INCLUDE_DIRS ${MY_INCLUDE_DIRS} ${PIKA_PYTHON_INCS}
+                    REQUIRES M5Unified M5GFX smooth_ui_toolkit mooncake_log mooncake esp_hid
                     EMBED_FILES ${EXTERN_FILES}
 )
