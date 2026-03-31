@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 #include "../../app_launcher.h"
-#include "assets/boot_sfx.h"
 #include "assets/logo_adv.h"
 #include "assets/logo.h"
 #include <apps/utils/common.h>
@@ -12,6 +11,8 @@
 #include <smooth_ui_toolkit.h>
 #include <mooncake_log.h>
 #include <hal.h>
+#include <cstdio>
+#include <cstdlib>
 
 // #define NO_BOOT_PLAY
 
@@ -62,10 +63,34 @@ void Launcher::boot_anim()
     GetHAL().display.setTextColor((uint32_t)0x999999);
     GetHAL().display.drawString(FW_VERSION, 201, 109);
 
-    // Play sfx
+    // Play boot sfx from SD card: place boot_sfx.wav at the root of the SD card
+    uint8_t* wav_buf = nullptr;
 #ifndef NO_BOOT_PLAY
-    GetHAL().speaker.setVolume(255);
-    GetHAL().speaker.playWav(boot_sfx, sizeof(boot_sfx));
+    {
+        auto sd = GetHAL().sdCardProbe();
+        if (sd.is_mounted) {
+            FILE* fp = fopen("/sdcard/boot_sfx.wav", "rb");
+            if (fp) {
+                fseek(fp, 0, SEEK_END);
+                size_t wav_size = static_cast<size_t>(ftell(fp));
+                rewind(fp);
+                wav_buf = static_cast<uint8_t*>(malloc(wav_size));
+                if (wav_buf) {
+                    fread(wav_buf, 1, wav_size, fp);
+                    fclose(fp);
+                    GetHAL().speaker.setVolume(50);
+                    GetHAL().speaker.playWav(wav_buf, wav_size);
+                } else {
+                    mclog::tagWarn(getAppInfo().name, "boot sfx malloc failed");
+                    fclose(fp);
+                }
+            } else {
+                mclog::tagWarn(getAppInfo().name, "boot_sfx.wav not found on SD card");
+            }
+        } else {
+            mclog::tagWarn(getAppInfo().name, "SD card not mounted, skipping boot sfx");
+        }
+    }
 #endif
 
     // Wait enter
@@ -100,4 +125,7 @@ void Launcher::boot_anim()
     }
 
     GetHAL().keyboard.clearKeyEvent();
+    if (wav_buf) {
+        free(wav_buf);
+    }
 }
