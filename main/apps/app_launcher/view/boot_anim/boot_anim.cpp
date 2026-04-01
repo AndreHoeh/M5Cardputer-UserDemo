@@ -11,11 +11,9 @@
 #include <smooth_ui_toolkit.h>
 #include <mooncake_log.h>
 #include <hal.h>
-#include <cstdio>
-#include <cstdlib>
+#include <apps/workers/sd_audio_worker.h>
 
-// #define NO_BOOT_PLAY
-
+using namespace mooncake;
 using namespace smooth_ui_toolkit;
 
 void start_arkanoid();
@@ -63,35 +61,9 @@ void Launcher::boot_anim()
     GetHAL().display.setTextColor((uint32_t)0x999999);
     GetHAL().display.drawString(FW_VERSION, 201, 109);
 
-    // Play boot sfx from SD card: place boot_sfx.wav at the root of the SD card
-    uint8_t* wav_buf = nullptr;
-#ifndef NO_BOOT_PLAY
-    {
-        auto sd = GetHAL().sdCardProbe();
-        if (sd.is_mounted) {
-            FILE* fp = fopen("/sdcard/boot_sfx.wav", "rb");
-            if (fp) {
-                fseek(fp, 0, SEEK_END);
-                size_t wav_size = static_cast<size_t>(ftell(fp));
-                rewind(fp);
-                wav_buf = static_cast<uint8_t*>(malloc(wav_size));
-                if (wav_buf) {
-                    fread(wav_buf, 1, wav_size, fp);
-                    fclose(fp);
-                    GetHAL().speaker.setVolume(50);
-                    GetHAL().speaker.playWav(wav_buf, wav_size);
-                } else {
-                    mclog::tagWarn(getAppInfo().name, "boot sfx malloc failed");
-                    fclose(fp);
-                }
-            } else {
-                mclog::tagWarn(getAppInfo().name, "boot_sfx.wav not found on SD card");
-            }
-        } else {
-            mclog::tagWarn(getAppInfo().name, "SD card not mounted, skipping boot sfx");
-        }
-    }
-#endif
+    // Play boot sfx from SD card.
+    const int sfx_id =
+        GetMooncake().createExtension(std::make_unique<workers::SdAudioWorker>("/sdcard/boot_sfx.wav", 50, 0));
 
     // Wait enter
     int egg_count = 0;
@@ -99,6 +71,7 @@ void Launcher::boot_anim()
         GetHAL().feedTheDog();
         GetHAL().delay(50);
         GetHAL().update();
+        GetMooncake().extensionManager()->updateAbilities();
 
         if (GetHAL().homeButton.wasPressed()) {
             GetHAL().speaker.setVolume(90);
@@ -125,7 +98,8 @@ void Launcher::boot_anim()
     }
 
     GetHAL().keyboard.clearKeyEvent();
-    if (wav_buf) {
-        free(wav_buf);
+    if (sfx_id >= 0) {
+        GetMooncake().destroyExtension(sfx_id);
+        GetMooncake().extensionManager()->updateAbilities();
     }
 }
