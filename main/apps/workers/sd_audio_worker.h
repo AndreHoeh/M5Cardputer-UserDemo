@@ -9,7 +9,7 @@ namespace workers {
  * @brief Loads and plays a WAV file from the SD card as a mooncake WorkerAbility.
  *
  * Usage:
- *   int id = GetMooncake().createExtension(
+ * @param volume  Relative volume from 0..255, normalized against the current master volume
  *       std::make_unique<workers::SdAudioWorker>("/sdcard/my_sound.wav", volume, channel));
  *   // Drive it each frame:
  *   GetMooncake().extensionManager()->updateAbilities();
@@ -28,14 +28,14 @@ public:
      * @param volume  Reference volume scaled against the current master volume
      * @param channel Speaker channel index (default 0); pass -1 for auto-select
      */
-    SdAudioWorker(std::string sdPath, uint8_t volume = 128, int channel = 0);
+    SdAudioWorker(std::string sdPath, float relative_volume = 0.5f, int channel = 0);
 
     void onCreate() override;
     void onDestroy() override;
 
 private:
     std::string _sd_path;
-    uint8_t _volume;
+    float _relative_volume;
     int _channel;
     uint8_t* _wav_buf = nullptr;
     size_t _wav_size  = 0;

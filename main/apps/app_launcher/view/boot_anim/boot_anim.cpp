@@ -74,7 +74,7 @@ void Launcher::boot_anim()
         GetMooncake().extensionManager()->updateAbilities();
 
         if (GetHAL().homeButton.wasPressed()) {
-            GetHAL().applyScaledSpeakerVolume(90);
+            GetHAL().applyScaledSpeakerVolume(1.0f);
             audio::play_random_tone();
             break;
         }

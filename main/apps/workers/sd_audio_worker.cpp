@@ -8,8 +8,8 @@ static const char* _tag = "SdAudioWorker";
 
 namespace workers {
 
-SdAudioWorker::SdAudioWorker(std::string sdPath, uint8_t volume, int channel)
-    : _sd_path(std::move(sdPath)), _volume(volume), _channel(channel)
+SdAudioWorker::SdAudioWorker(std::string sdPath, float relative_volume, int channel)
+    : _sd_path(std::move(sdPath)), _relative_volume(relative_volume), _channel(channel)
 {
 }
 
@@ -41,7 +41,7 @@ void SdAudioWorker::onCreate()
     fread(_wav_buf, 1, _wav_size, fp);
     fclose(fp);
 
-    GetHAL().applyScaledSpeakerVolume(_volume);
+    GetHAL().applyScaledSpeakerVolume(_relative_volume);
     GetHAL().speaker.playWav(_wav_buf, _wav_size, 1, _channel);
     mclog::tagInfo(_tag, "playing {} bytes from {}", _wav_size, _sd_path);
 }

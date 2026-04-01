@@ -9,6 +9,7 @@
 #include "utils/settings/settings.h"
 #include <M5Unified.hpp>
 #include <M5GFX.h>
+#include <algorithm>
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -60,8 +61,8 @@ public:
         return _speaker_volume;
     }
     void setSpeakerVolume(uint8_t volume, bool persist = true);
-    uint8_t getScaledSpeakerVolume(uint8_t referenceVolume) const;
-    void applyScaledSpeakerVolume(uint8_t referenceVolume);
+    uint8_t getScaledSpeakerVolume(float scale) const;
+    void applyScaledSpeakerVolume(float scale);
 
     /* ---------------------------------- Input --------------------------------- */
     m5::Button_Class& homeButton = M5.BtnA;

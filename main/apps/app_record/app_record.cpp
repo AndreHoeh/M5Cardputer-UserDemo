@@ -75,7 +75,7 @@ void AppRecord::onClose()
     // Cleanup audio devices
     GetHAL().mic.end();
     GetHAL().speaker.begin();
-    GetHAL().applyScaledSpeakerVolume(255);
+    GetHAL().applyScaledSpeakerVolume(1.0f);
 
     // Free memory
     if (_rec_data) {
@@ -90,7 +90,7 @@ void AppRecord::start_recording()
 {
     // Since microphone and speaker cannot be used at the same time, turn off speaker
     GetHAL().speaker.end();
-    GetHAL().applyScaledSpeakerVolume(255);
+    GetHAL().applyScaledSpeakerVolume(1.0f);
 
     auto cfg = GetHAL().mic.config();
     // cfg.over_sampling = 1;
@@ -115,7 +115,7 @@ void AppRecord::start_playback()
 
     GetHAL().mic.end();
     GetHAL().speaker.begin();
-    GetHAL().applyScaledSpeakerVolume(255);
+    GetHAL().applyScaledSpeakerVolume(1.0f);
 
     render_page_playing();
 

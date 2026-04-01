@@ -9,6 +9,7 @@
 #include <mooncake_log.h>
 #include <M5Unified.hpp>
 #include <algorithm>
+#include <cmath>
 #include <esp_mac.h>
 #include <memory>
 
@@ -62,15 +63,16 @@ void Hal::setSpeakerVolume(uint8_t volume, bool persist)
     }
 }
 
-uint8_t Hal::getScaledSpeakerVolume(uint8_t referenceVolume) const
+uint8_t Hal::getScaledSpeakerVolume(float scale) const
 {
-    const uint16_t scaled = static_cast<uint16_t>(_speaker_volume) * referenceVolume / DEFAULT_SPEAKER_VOLUME;
-    return static_cast<uint8_t>(std::min<uint16_t>(scaled, 255));
+    const float clampedScale = std::clamp(scale, 0.0f, 1.0f);
+    const float scaled       = static_cast<float>(_speaker_volume) * clampedScale;
+    return static_cast<uint8_t>(std::lround(scaled));
 }
 
-void Hal::applyScaledSpeakerVolume(uint8_t referenceVolume)
+void Hal::applyScaledSpeakerVolume(float scale)
 {
-    speaker.setVolume(getScaledSpeakerVolume(referenceVolume));
+    speaker.setVolume(getScaledSpeakerVolume(scale));
 }
 
 std::vector<uint8_t> Hal::getDeviceMac()
