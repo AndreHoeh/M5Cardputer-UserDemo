@@ -14,10 +14,20 @@ Settings::~Settings()
 {
     if (nvs_handle_ != 0) {
         if (read_write_ && dirty_) {
-            ESP_ERROR_CHECK(nvs_commit(nvs_handle_));
+            Commit();
         }
         nvs_close(nvs_handle_);
     }
+}
+
+void Settings::Commit()
+{
+    if (nvs_handle_ == 0 || !read_write_ || !dirty_) {
+        return;
+    }
+
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle_));
+    dirty_ = false;
 }
 
 std::string Settings::GetString(const std::string& key, const std::string& default_value)
@@ -45,6 +55,7 @@ void Settings::SetString(const std::string& key, const std::string& value)
     if (read_write_) {
         ESP_ERROR_CHECK(nvs_set_str(nvs_handle_, key.c_str(), value.c_str()));
         dirty_ = true;
+        Commit();
     } else {
         ESP_LOGW(TAG, "Namespace %s is not open for writing", ns_.c_str());
     }
@@ -68,6 +79,7 @@ void Settings::SetInt(const std::string& key, int32_t value)
     if (read_write_) {
         ESP_ERROR_CHECK(nvs_set_i32(nvs_handle_, key.c_str(), value));
         dirty_ = true;
+        Commit();
     } else {
         ESP_LOGW(TAG, "Namespace %s is not open for writing", ns_.c_str());
     }
@@ -91,6 +103,7 @@ void Settings::SetBool(const std::string& key, bool value)
     if (read_write_) {
         ESP_ERROR_CHECK(nvs_set_u8(nvs_handle_, key.c_str(), value ? 1 : 0));
         dirty_ = true;
+        Commit();
     } else {
         ESP_LOGW(TAG, "Namespace %s is not open for writing", ns_.c_str());
     }
@@ -102,6 +115,8 @@ void Settings::EraseKey(const std::string& key)
         auto ret = nvs_erase_key(nvs_handle_, key.c_str());
         if (ret != ESP_ERR_NVS_NOT_FOUND) {
             ESP_ERROR_CHECK(ret);
+            dirty_ = true;
+            Commit();
         }
     } else {
         ESP_LOGW(TAG, "Namespace %s is not open for writing", ns_.c_str());
@@ -112,6 +127,8 @@ void Settings::EraseAll()
 {
     if (read_write_) {
         ESP_ERROR_CHECK(nvs_erase_all(nvs_handle_));
+        dirty_ = true;
+        Commit();
     } else {
         ESP_LOGW(TAG, "Namespace %s is not open for writing", ns_.c_str());
     }

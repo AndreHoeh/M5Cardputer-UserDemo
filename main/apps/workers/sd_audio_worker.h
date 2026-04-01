@@ -25,7 +25,7 @@ class SdAudioWorker : public mooncake::WorkerAbility {
 public:
     /**
      * @param sdPath  Full VFS path, e.g. "/sdcard/boot_sfx.wav"
-     * @param volume  Speaker volume 0-255 (default 128)
+     * @param volume  Reference volume scaled against the current master volume
      * @param channel Speaker channel index (default 0); pass -1 for auto-select
      */
     SdAudioWorker(std::string sdPath, uint8_t volume = 128, int channel = 0);

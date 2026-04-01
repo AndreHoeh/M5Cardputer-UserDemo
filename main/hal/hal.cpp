@@ -8,11 +8,13 @@
 #include <apps/utils/audio/audio.h>
 #include <mooncake_log.h>
 #include <M5Unified.hpp>
+#include <algorithm>
 #include <esp_mac.h>
 #include <memory>
 
 static std::unique_ptr<Hal> _hal_instance;
-static const std::string _tag = "HAL";
+static const std::string _tag                      = "HAL";
+static constexpr char SPEAKER_VOLUME_SETTING_KEY[] = "speaker_volume";
 
 Hal& GetHAL()
 {
@@ -48,6 +50,27 @@ void Hal::update()
 void Hal::feedTheDog()
 {
     vTaskDelay(1);
+}
+
+void Hal::setSpeakerVolume(uint8_t volume, bool persist)
+{
+    _speaker_volume = volume;
+    speaker.setVolume(_speaker_volume);
+
+    if (persist && _settings) {
+        _settings->SetInt(SPEAKER_VOLUME_SETTING_KEY, _speaker_volume);
+    }
+}
+
+uint8_t Hal::getScaledSpeakerVolume(uint8_t referenceVolume) const
+{
+    const uint16_t scaled = static_cast<uint16_t>(_speaker_volume) * referenceVolume / DEFAULT_SPEAKER_VOLUME;
+    return static_cast<uint8_t>(std::min<uint16_t>(scaled, 255));
+}
+
+void Hal::applyScaledSpeakerVolume(uint8_t referenceVolume)
+{
+    speaker.setVolume(getScaledSpeakerVolume(referenceVolume));
 }
 
 std::vector<uint8_t> Hal::getDeviceMac()
@@ -120,6 +143,10 @@ void Hal::setting_init()
     ESP_ERROR_CHECK(ret);
 
     _settings = new Settings("cardputer", true);
+
+    const int32_t stored_volume  = _settings->GetInt(SPEAKER_VOLUME_SETTING_KEY, DEFAULT_SPEAKER_VOLUME);
+    const int32_t clamped_volume = std::clamp<int32_t>(stored_volume, 0, 255);
+    setSpeakerVolume(static_cast<uint8_t>(clamped_volume), false);
 }
 
 /* -------------------------------------------------------------------------- */

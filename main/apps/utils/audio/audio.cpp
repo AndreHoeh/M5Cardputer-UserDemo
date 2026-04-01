@@ -18,7 +18,7 @@ static std::vector<int> c_major_scale = {60, 62, 64, 65, 67, 69, 71};  // Cå¤§è°
 
 void play_tone(int frequency, double durationSec)
 {
-    if (GetHAL().speaker.getVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0) {
         return;
     }
 
@@ -48,7 +48,7 @@ void play_tone(int frequency, double durationSec)
 
 void play_melody(const std::vector<int>& midiList, double durationSec = 0.1)
 {
-    if (GetHAL().speaker.getVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0) {
         return;
     }
 
@@ -86,7 +86,7 @@ void play_melody(const std::vector<int>& midiList, double durationSec = 0.1)
 
 void play_tone_from_midi(int midi, double durationSec)
 {
-    if (GetHAL().speaker.getVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0) {
         return;
     }
 
@@ -96,7 +96,7 @@ void play_tone_from_midi(int midi, double durationSec)
 
 void play_random_tone(int semitoneShift = 0, double durationSec = 0.15)
 {
-    if (GetHAL().speaker.getVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0) {
         return;
     }
 
@@ -119,7 +119,7 @@ static void _keyboard_sfx_on_key_event(const Keyboard::KeyEvent_t& event)
         return;
     }
 
-    GetHAL().speaker.setVolume(90);
+    GetHAL().applyScaledSpeakerVolume(90);
 
     int semitoneShift = 48;
     switch (event.keyCode) {

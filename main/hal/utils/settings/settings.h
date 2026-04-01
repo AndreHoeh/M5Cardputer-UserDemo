@@ -20,6 +20,8 @@ public:
     void EraseAll();
 
 private:
+    void Commit();
+
     std::string ns_;
     nvs_handle_t nvs_handle_ = 0;
     bool read_write_         = false;

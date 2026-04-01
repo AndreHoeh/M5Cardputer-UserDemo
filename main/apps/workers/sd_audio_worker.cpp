@@ -41,7 +41,7 @@ void SdAudioWorker::onCreate()
     fread(_wav_buf, 1, _wav_size, fp);
     fclose(fp);
 
-    GetHAL().speaker.setVolume(_volume);
+    GetHAL().applyScaledSpeakerVolume(_volume);
     GetHAL().speaker.playWav(_wav_buf, _wav_size, 1, _channel);
     mclog::tagInfo(_tag, "playing {} bytes from {}", _wav_size, _sd_path);
 }

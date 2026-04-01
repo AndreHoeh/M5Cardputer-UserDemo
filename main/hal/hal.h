@@ -55,6 +55,14 @@ public:
     m5::Speaker_Class& speaker = M5.Speaker;
     m5::Mic_Class& mic         = M5.Mic;
 
+    uint8_t getSpeakerVolume() const
+    {
+        return _speaker_volume;
+    }
+    void setSpeakerVolume(uint8_t volume, bool persist = true);
+    uint8_t getScaledSpeakerVolume(uint8_t referenceVolume) const;
+    void applyScaledSpeakerVolume(uint8_t referenceVolume);
+
     /* ---------------------------------- Input --------------------------------- */
     m5::Button_Class& homeButton = M5.BtnA;
     Keyboard keyboard;
@@ -125,7 +133,10 @@ public:
     CapLoRa868 capLora868;
 
 private:
+    static constexpr uint8_t DEFAULT_SPEAKER_VOLUME = 90;
+
     Settings* _settings             = nullptr;
+    uint8_t _speaker_volume         = DEFAULT_SPEAKER_VOLUME;
     bool _is_wifi_inited            = false;
     bool _is_wifi_connected         = false;
     bool _is_esp_now_inited         = false;
