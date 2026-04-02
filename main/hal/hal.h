@@ -134,7 +134,7 @@ public:
     CapLoRa868 capLora868;
 
 private:
-    static constexpr uint8_t DEFAULT_SPEAKER_VOLUME = 90;
+    static constexpr uint8_t DEFAULT_SPEAKER_VOLUME = 30;
 
     Settings* _settings             = nullptr;
     uint8_t _speaker_volume         = DEFAULT_SPEAKER_VOLUME;
