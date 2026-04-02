@@ -71,7 +71,7 @@ void AppKeyboard::onRunning()
     }
 
     // Close app when home button clicked
-    if (GetHAL().homeButton.wasClicked()) {
+    if (is_app_exit_requested()) {
         close();
     }
 }

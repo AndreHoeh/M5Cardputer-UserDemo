@@ -1,5 +1,6 @@
 #include "app_settings.h"
 #include <apps/utils/audio/audio.h>
+#include <apps/utils/common.h>
 #include <apps/utils/theme.h>
 #include <hal.h>
 #include <mooncake_log.h>
@@ -25,7 +26,7 @@ void AppSettings::onOpen()
 
 void AppSettings::onRunning()
 {
-    if (GetHAL().homeButton.wasClicked()) {
+    if (is_app_exit_requested()) {
         audio::play_random_tone();
         close();
     }
@@ -58,5 +59,5 @@ void AppSettings::render_volume_setting()
     const uint8_t volume = GetHAL().getSpeakerVolume();
     mclog::tagInfo(getAppInfo().name, "speaker volume: {}", volume);
     GetHAL().canvas.printf("Speaker Volume: %u\n", volume);
-    GetHAL().canvas.println("Press Home to exit");
+    GetHAL().canvas.println("Press Home or Opt+H to exit");
 }

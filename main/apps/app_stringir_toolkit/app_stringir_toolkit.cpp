@@ -278,7 +278,7 @@ void AppStringIRToolKit::handle_arrow_keys()
 void AppStringIRToolKit::handle_input()
 {
     // Close app when home button clicked
-    if (GetHAL().homeButton.wasClicked()) {
+    if (is_app_exit_requested()) {
         audio::play_random_tone();
         close();
     }

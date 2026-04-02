@@ -56,7 +56,7 @@ void AppRecord::onRunning()
     }
 
     // Close app when home button clicked
-    if (GetHAL().homeButton.wasClicked()) {
+    if (is_app_exit_requested()) {
         // GetHAL().speaker.setVolume(90);
         // audio::play_random_tone();
         close();

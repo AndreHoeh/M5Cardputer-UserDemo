@@ -34,3 +34,17 @@ public:
     const uint16_t* iconBig;
     const uint16_t* iconSmall;
 };
+
+inline bool is_app_exit_requested()
+{
+    if (GetHAL().homeButton.wasClicked()) {
+        return true;
+    }
+
+    const auto& keyEvent = GetHAL().keyboard.getLatestKeyEvent();
+    if (!keyEvent.state || keyEvent.keyCode != KEY_H) {
+        return false;
+    }
+
+    return (GetHAL().keyboard.getModifierMask() & KEY_MOD_LMETA) != 0;
+}

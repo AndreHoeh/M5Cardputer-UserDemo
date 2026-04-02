@@ -126,6 +126,15 @@ void Keyboard::update_modifier_mask(const KeyEventRaw_t& key)
         }
     }
 
+    // Check left meta/opt key (3, 1)
+    if (key.row == 3 && key.col == 1) {
+        if (key.state) {
+            _modifier_mask |= KEY_MOD_LMETA;
+        } else {
+            _modifier_mask &= ~KEY_MOD_LMETA;
+        }
+    }
+
     // Check capslock key (2, 1)
     if (key.row == 2 && key.col == 1) {
         _capslock_state = key.state;
@@ -228,7 +237,8 @@ Keyboard::KeyEvent_t Keyboard::convertToKeyEvent(const KeyEventRaw_t& key)
         ret.keyName = _key_value_map[key.row][key.col].firstName;
     }
 
-    if (ret.keyCode == KEY_LEFTSHIFT || ret.keyCode == KEY_LEFTCTRL || ret.keyCode == KEY_CAPSLOCK) {
+    if (ret.keyCode == KEY_LEFTSHIFT || ret.keyCode == KEY_LEFTCTRL || ret.keyCode == KEY_CAPSLOCK ||
+        ret.keyCode == KEY_LEFTMETA || ret.keyCode == KEY_LEFTALT) {
         ret.isModifier = true;
     } else {
         ret.isModifier = false;

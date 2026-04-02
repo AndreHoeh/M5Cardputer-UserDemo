@@ -47,7 +47,7 @@ void AppChat::onRunning()
     check_received_messages();
 
     // Close app when home button clicked
-    if (GetHAL().homeButton.wasClicked()) {
+    if (is_app_exit_requested()) {
         audio::play_random_tone();
         close();
     }
