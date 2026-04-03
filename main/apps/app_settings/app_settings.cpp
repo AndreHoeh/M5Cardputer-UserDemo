@@ -116,6 +116,7 @@ void AppSettings::render_volume_setting()
     } else {
         GetHAL().canvas.println("Enter: edit");
     }
+    GetHAL().canvas.println("Opt+S: save");
     GetHAL().canvas.println("Opt+H: exit");
 }
 
@@ -131,6 +132,12 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
         } else {
             start_editing();
         }
+        _needs_redraw = true;
+        return;
+    }
+
+    if (keyEvent.keyCode == KEY_S && (GetHAL().keyboard.getModifierMask() & KEY_MOD_LMETA)) {
+        save_to_nvs();
         _needs_redraw = true;
         return;
     }
@@ -273,6 +280,23 @@ void AppSettings::restore_pre_edit_volume()
 
     GetHAL().setSpeakerVolume(static_cast<uint8_t>(_pending_volume), false);
     update_dirty_state();
+}
+
+void AppSettings::save_to_nvs()
+{
+    if (!_is_pending_valid || (_is_editing && _volume_input.empty())) {
+        _status_message = "Save blocked: invalid value";
+        return;
+    }
+
+    if (!_is_dirty) {
+        _status_message = "Already saved";
+        return;
+    }
+
+    GetHAL().setSpeakerVolume(static_cast<uint8_t>(_pending_volume), true);
+    update_dirty_state();
+    _status_message = "Saved to NVS";
 }
 
 int AppSettings::read_persisted_volume()

@@ -32,5 +32,6 @@ private:
     void start_editing();
     void confirm_editing();
     void restore_pre_edit_volume();
+    void save_to_nvs();
     int read_persisted_volume();
 };
