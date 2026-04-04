@@ -2,6 +2,7 @@
 #include <mooncake.h>
 #include "settings_registry.h"
 #include <hal/hal.h>
+#include <cstddef>
 #include <string>
 
 class AppSettings : public mooncake::AppAbility {
@@ -15,8 +16,7 @@ public:
 
 private:
     settings_model::SettingsRegistry _settings_registry;
-    settings_model::Setting* _volume_setting     = nullptr;
-    settings_model::Setting* _brightness_setting = nullptr;
+    size_t _selected_setting_index = 0;
 
     std::string _volume_input;
     int _pending_volume         = 0;
@@ -29,8 +29,13 @@ private:
     std::string _status_message;
     int _key_event_slot_id = -1;
 
+    settings_model::Setting* current_setting();
+    bool navigate_setting(int delta);
+    bool apply_selected_setting_runtime(int value);
+    void refresh_selected_setting_state();
+
     void render_interface();
-    void render_volume_setting();
+    void render_selected_setting();
     void initialize_settings_model();
     void handle_key_event(const Keyboard::KeyEvent_t& keyEvent);
     void update_pending_volume_from_input();
