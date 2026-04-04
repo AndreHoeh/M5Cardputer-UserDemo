@@ -164,8 +164,29 @@ void AppSettings::refresh_selected_setting_state()
 
     int32_t value = 0;
     if (!setting->getInt(value)) {
-        value = 0;
-        setting->setInt(value);
+        const int32_t min_value = get_setting_min_int(*setting);
+        const int32_t max_value = get_setting_max_int(*setting);
+
+        if (min_value > max_value) {
+            _pending_volume  = 0;
+            _pre_edit_volume = 0;
+            _volume_input.clear();
+            _is_pending_valid = false;
+            _is_dirty         = false;
+            log_status(getAppInfo().name, "Invalid setting range");
+            return;
+        }
+
+        value = std::clamp<int32_t>(0, min_value, max_value);
+        if (!setting->setInt(value)) {
+            _pending_volume  = 0;
+            _pre_edit_volume = 0;
+            _volume_input.clear();
+            _is_pending_valid = false;
+            update_dirty_state();
+            log_status(getAppInfo().name, setting->validationMessage());
+            return;
+        }
     }
 
     _pending_volume        = static_cast<int>(value);
@@ -306,7 +327,9 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
             confirm_editing();
         }
 
-        navigate_setting(navigate_left ? -1 : 1);
+        if (!navigate_setting(navigate_left ? -1 : 1)) {
+            log_status(getAppInfo().name, "Navigation failed");
+        }
         _needs_redraw = true;
         return;
     }
@@ -392,7 +415,7 @@ void AppSettings::update_pending_volume_from_input()
 
     if (_volume_input.empty()) {
         _is_pending_valid = false;
-        _is_dirty         = false;
+        update_dirty_state();
 
         if (_is_editing) {
             log_status(getAppInfo().name, "Empty value. Enter to restore");
@@ -406,7 +429,7 @@ void AppSettings::update_pending_volume_from_input()
     for (const char ch : _volume_input) {
         if (!std::isdigit(static_cast<unsigned char>(ch))) {
             _is_pending_valid = false;
-            _is_dirty         = false;
+            update_dirty_state();
             log_status(getAppInfo().name, "Invalid input. Enter to restore");
             return;
         }
@@ -414,7 +437,7 @@ void AppSettings::update_pending_volume_from_input()
         value = value * 10 + static_cast<int64_t>(ch - '0');
         if (value > std::numeric_limits<int32_t>::max()) {
             _is_pending_valid = false;
-            _is_dirty         = false;
+            update_dirty_state();
             log_status(getAppInfo().name, "Value too large. Enter to restore");
             return;
         }
@@ -422,9 +445,16 @@ void AppSettings::update_pending_volume_from_input()
 
     const int32_t min_value = get_setting_min_int(*setting);
     const int32_t max_value = get_setting_max_int(*setting);
+    if (min_value > max_value) {
+        _is_pending_valid = false;
+        update_dirty_state();
+        log_status(getAppInfo().name, "Invalid setting range");
+        return;
+    }
+
     if (value < min_value || value > max_value) {
         _is_pending_valid = false;
-        _is_dirty         = false;
+        update_dirty_state();
         log_status(getAppInfo().name, "Out of range. Enter to restore");
         return;
     }
@@ -434,13 +464,15 @@ void AppSettings::update_pending_volume_from_input()
 
     if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
         _is_pending_valid = false;
-        _is_dirty         = false;
+        update_dirty_state();
         log_status(getAppInfo().name, setting->validationMessage());
         return;
     }
 
     if (_is_editing) {
-        apply_selected_setting_runtime(_pending_volume);
+        if (!apply_selected_setting_runtime(_pending_volume)) {
+            log_status(getAppInfo().name, "Runtime apply not supported");
+        }
     }
 
     update_dirty_state();
@@ -521,9 +553,16 @@ void AppSettings::restore_pre_edit_volume()
     _volume_input     = std::to_string(_pending_volume);
     _is_pending_valid = true;
 
-    setting->setInt(static_cast<int32_t>(_pending_volume));
+    if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
+        _is_pending_valid = false;
+        update_dirty_state();
+        log_status(getAppInfo().name, setting->validationMessage());
+        return;
+    }
 
-    apply_selected_setting_runtime(_pending_volume);
+    if (!apply_selected_setting_runtime(_pending_volume)) {
+        log_status(getAppInfo().name, "Runtime apply not supported");
+    }
     update_dirty_state();
 }
 
