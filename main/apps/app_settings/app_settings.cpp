@@ -356,7 +356,7 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
 
             if (_volume_input.length() >= 10) {
                 log_status(getAppInfo().name, "Max 10 digits");
-                _needs_redraw   = true;
+                _needs_redraw = true;
                 return;
             }
 
@@ -476,9 +476,9 @@ void AppSettings::start_editing()
     }
 
     if (setting->definition().type != settings_model::SettingType::kInt) {
-        _is_editing     = false;
+        _is_editing = false;
         log_status(getAppInfo().name, "Current type not editable");
-        _needs_redraw   = true;
+        _needs_redraw = true;
         return;
     }
 

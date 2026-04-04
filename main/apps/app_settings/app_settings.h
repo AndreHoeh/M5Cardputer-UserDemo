@@ -26,7 +26,7 @@ private:
     bool _is_editing            = false;
     bool _needs_redraw          = false;
     bool _replace_on_next_digit = true;
-    int _key_event_slot_id = -1;
+    int _key_event_slot_id      = -1;
 
     settings_model::Setting* current_setting();
     bool navigate_setting(int delta);
