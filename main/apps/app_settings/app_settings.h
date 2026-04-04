@@ -18,8 +18,8 @@ private:
     settings_model::SettingsRegistry _settings_registry;
     size_t _selected_setting_index = 0;
 
-    std::string _volume_input;
-    int _pending_volume         = 0;
+    std::string _pending_input_text;
+    int _pending_int_value      = 0;
     bool _is_pending_valid      = false;
     bool _is_dirty              = false;
     bool _is_editing            = false;
@@ -36,7 +36,7 @@ private:
     void render_selected_setting();
     void initialize_settings_model();
     void handle_key_event(const Keyboard::KeyEvent_t& keyEvent);
-    void update_pending_volume_from_input();
+    void update_pending_value_from_input();
     void update_dirty_state();
     void start_editing();
     void confirm_editing();

@@ -163,8 +163,8 @@ void AppSettings::refresh_selected_setting_state()
 {
     auto* setting = current_setting();
     if (setting == nullptr) {
-        _pending_volume = 0;
-        _volume_input.clear();
+        _pending_int_value = 0;
+        _pending_input_text.clear();
         _is_pending_valid = false;
         _is_dirty         = false;
         log_status(getAppInfo().name, "No settings available");
@@ -172,8 +172,8 @@ void AppSettings::refresh_selected_setting_state()
     }
 
     if (setting->definition().type != settings_model::SettingType::kInt) {
-        _pending_volume = 0;
-        _volume_input.clear();
+        _pending_int_value = 0;
+        _pending_input_text.clear();
         _is_pending_valid = false;
         update_dirty_state();
         log_status(getAppInfo().name, "Unsupported type in current UI");
@@ -186,8 +186,8 @@ void AppSettings::refresh_selected_setting_state()
         const int32_t max_value = get_setting_max_int(*setting);
 
         if (min_value > max_value) {
-            _pending_volume = 0;
-            _volume_input.clear();
+            _pending_int_value = 0;
+            _pending_input_text.clear();
             _is_pending_valid = false;
             _is_dirty         = false;
             log_status(getAppInfo().name, "Invalid setting range");
@@ -196,8 +196,8 @@ void AppSettings::refresh_selected_setting_state()
 
         value = std::clamp<int32_t>(0, min_value, max_value);
         if (!setting->setInt(value)) {
-            _pending_volume = 0;
-            _volume_input.clear();
+            _pending_int_value = 0;
+            _pending_input_text.clear();
             _is_pending_valid = false;
             update_dirty_state();
             log_status(getAppInfo().name, setting->validationMessage());
@@ -205,8 +205,8 @@ void AppSettings::refresh_selected_setting_state()
         }
     }
 
-    _pending_volume        = static_cast<int>(value);
-    _volume_input          = std::to_string(_pending_volume);
+    _pending_int_value     = static_cast<int>(value);
+    _pending_input_text    = std::to_string(_pending_int_value);
     _is_pending_valid      = true;
     _replace_on_next_digit = true;
     update_dirty_state();
@@ -276,7 +276,6 @@ void AppSettings::render_interface()
     GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
     GetHAL().canvas.println("Settings");
     GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
-    GetHAL().canvas.println();
 
     render_selected_setting();
 }
@@ -307,11 +306,11 @@ void AppSettings::render_selected_setting()
     }
 
     if (_is_editing) {
-        GetHAL().canvas.print(_volume_input.empty() ? "<empty>" : _volume_input.c_str());
+        GetHAL().canvas.print(_pending_input_text.empty() ? "<empty>" : _pending_input_text.c_str());
         GetHAL().canvas.print("_");
     } else {
         if (setting->definition().type == settings_model::SettingType::kInt) {
-            GetHAL().canvas.print(std::to_string(_pending_volume).c_str());
+            GetHAL().canvas.print(std::to_string(_pending_int_value).c_str());
         } else {
             GetHAL().canvas.print("<unsupported>");
         }
@@ -368,9 +367,9 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
     bool changed = false;
 
     if (keyEvent.keyCode == KEY_BACKSPACE || keyEvent.keyCode == KEY_DELETE) {
-        if (!_volume_input.empty()) {
-            _volume_input.pop_back();
-            _replace_on_next_digit = _volume_input.empty();
+        if (!_pending_input_text.empty()) {
+            _pending_input_text.pop_back();
+            _replace_on_next_digit = _pending_input_text.empty();
             changed                = true;
         }
     } else {
@@ -384,17 +383,17 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
 
         if (digit != '\0') {
             if (_replace_on_next_digit) {
-                _volume_input.clear();
+                _pending_input_text.clear();
                 _replace_on_next_digit = false;
             }
 
-            if (_volume_input.length() >= 10) {
+            if (_pending_input_text.length() >= 10) {
                 log_status(getAppInfo().name, "Max 10 digits");
                 _needs_redraw = true;
                 return;
             }
 
-            _volume_input.push_back(digit);
+            _pending_input_text.push_back(digit);
             changed = true;
         }
     }
@@ -403,11 +402,11 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
         return;
     }
 
-    update_pending_volume_from_input();
+    update_pending_value_from_input();
     _needs_redraw = true;
 }
 
-void AppSettings::update_pending_volume_from_input()
+void AppSettings::update_pending_value_from_input()
 {
     auto* setting = current_setting();
     if (setting == nullptr) {
@@ -424,7 +423,7 @@ void AppSettings::update_pending_volume_from_input()
         return;
     }
 
-    if (_volume_input.empty()) {
+    if (_pending_input_text.empty()) {
         _is_pending_valid = false;
         update_dirty_state();
 
@@ -437,7 +436,7 @@ void AppSettings::update_pending_volume_from_input()
     }
 
     int64_t value = 0;
-    for (const char ch : _volume_input) {
+    for (const char ch : _pending_input_text) {
         if (!std::isdigit(static_cast<unsigned char>(ch))) {
             _is_pending_valid = false;
             update_dirty_state();
@@ -470,8 +469,8 @@ void AppSettings::update_pending_volume_from_input()
         return;
     }
 
-    _pending_volume   = static_cast<int>(value);
-    _is_pending_valid = true;
+    _pending_int_value = static_cast<int>(value);
+    _is_pending_valid  = true;
 
     if (_is_editing) {
         log_status(getAppInfo().name, "Value valid. Enter to confirm");
@@ -528,13 +527,13 @@ void AppSettings::confirm_editing()
         return;
     }
 
-    if (!_is_pending_valid || _volume_input.empty()) {
+    if (!_is_pending_valid || _pending_input_text.empty()) {
         apply_fallback_value();
         if (_is_pending_valid) {
             log_status(getAppInfo().name, "Invalid input: fallback applied");
         }
     } else {
-        if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
+        if (!setting->setInt(static_cast<int32_t>(_pending_int_value))) {
             apply_fallback_value();
             if (_is_pending_valid) {
                 log_status(getAppInfo().name, "Confirm failed: fallback applied");
@@ -544,12 +543,12 @@ void AppSettings::confirm_editing()
             return;
         }
 
-        if (!apply_selected_setting_runtime(_pending_volume)) {
+        if (!apply_selected_setting_runtime(_pending_int_value)) {
             log_status(getAppInfo().name, "Runtime apply not supported");
         }
 
         update_dirty_state();
-        _volume_input = std::to_string(_pending_volume);
+        _pending_input_text = std::to_string(_pending_int_value);
 
         if (_is_dirty) {
             log_status(getAppInfo().name, "Edited value active (not saved)");
@@ -568,8 +567,8 @@ void AppSettings::apply_fallback_value()
     if (setting == nullptr) {
         _is_pending_valid = false;
         _is_dirty         = false;
-        _volume_input.clear();
-        _pending_volume = 0;
+        _pending_input_text.clear();
+        _pending_int_value = 0;
         log_status(getAppInfo().name, "No setting selected");
         return;
     }
@@ -590,18 +589,18 @@ void AppSettings::apply_fallback_value()
         return;
     }
 
-    _pending_volume   = static_cast<int>(get_setting_fallback_int(*setting));
-    _volume_input     = std::to_string(_pending_volume);
-    _is_pending_valid = true;
+    _pending_int_value  = static_cast<int>(get_setting_fallback_int(*setting));
+    _pending_input_text = std::to_string(_pending_int_value);
+    _is_pending_valid   = true;
 
-    if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
+    if (!setting->setInt(static_cast<int32_t>(_pending_int_value))) {
         _is_pending_valid = false;
         update_dirty_state();
         log_status(getAppInfo().name, setting->validationMessage());
         return;
     }
 
-    if (!apply_selected_setting_runtime(_pending_volume)) {
+    if (!apply_selected_setting_runtime(_pending_int_value)) {
         log_status(getAppInfo().name, "Runtime apply not supported");
     }
     update_dirty_state();
@@ -615,7 +614,7 @@ void AppSettings::save_to_nvs()
         return;
     }
 
-    if (!_is_pending_valid || (_is_editing && _volume_input.empty())) {
+    if (!_is_pending_valid || (_is_editing && _pending_input_text.empty())) {
         log_status(getAppInfo().name, "Save blocked: invalid value");
         return;
     }
