@@ -24,6 +24,16 @@ int32_t get_setting_max_int(const settings_model::Setting& setting)
 {
     return setting.definition().range.int_max.value_or(std::numeric_limits<int32_t>::max());
 }
+
+void log_status(const std::string& tag, const char* message)
+{
+    mclog::tagInfo(tag, "{}", message);
+}
+
+void log_status(const std::string& tag, const std::string& message)
+{
+    mclog::tagInfo(tag, "{}", message.c_str());
+}
 }  // namespace
 
 AppSettings::AppSettings()
@@ -138,7 +148,7 @@ void AppSettings::refresh_selected_setting_state()
         _volume_input.clear();
         _is_pending_valid = false;
         _is_dirty         = false;
-        _status_message   = "No settings available";
+        log_status(getAppInfo().name, "No settings available");
         return;
     }
 
@@ -148,7 +158,7 @@ void AppSettings::refresh_selected_setting_state()
         _volume_input.clear();
         _is_pending_valid = false;
         update_dirty_state();
-        _status_message = "Unsupported type in current UI";
+        log_status(getAppInfo().name, "Unsupported type in current UI");
         return;
     }
 
@@ -166,7 +176,7 @@ void AppSettings::refresh_selected_setting_state()
     update_dirty_state();
 
     if (!_is_editing) {
-        _status_message = "Press Enter to edit";
+        log_status(getAppInfo().name, "Press Enter to edit");
     }
 }
 
@@ -273,10 +283,6 @@ void AppSettings::render_selected_setting()
     GetHAL().canvas.println();
     GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
 
-    GetHAL().canvas.setTextColor(TFT_CYAN, THEME_COLOR_BG);
-    GetHAL().canvas.printf("%s\n", _status_message.c_str());
-    GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
-
     if (_is_editing) {
         GetHAL().canvas.println("Enter: confirm");
     } else if (setting->definition().type == settings_model::SettingType::kInt) {
@@ -349,7 +355,7 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
             }
 
             if (_volume_input.length() >= 10) {
-                _status_message = "Max 10 digits";
+                log_status(getAppInfo().name, "Max 10 digits");
                 _needs_redraw   = true;
                 return;
             }
@@ -373,14 +379,14 @@ void AppSettings::update_pending_volume_from_input()
     if (setting == nullptr) {
         _is_pending_valid = false;
         _is_dirty         = false;
-        _status_message   = "No setting selected";
+        log_status(getAppInfo().name, "No setting selected");
         return;
     }
 
     if (setting->definition().type != settings_model::SettingType::kInt) {
         _is_pending_valid = false;
         _is_dirty         = setting->isDirty();
-        _status_message   = "Current type not editable";
+        log_status(getAppInfo().name, "Current type not editable");
         return;
     }
 
@@ -389,9 +395,9 @@ void AppSettings::update_pending_volume_from_input()
         _is_dirty         = false;
 
         if (_is_editing) {
-            _status_message = "Empty value. Enter to restore";
+            log_status(getAppInfo().name, "Empty value. Enter to restore");
         } else {
-            _status_message = "Press Enter to edit";
+            log_status(getAppInfo().name, "Press Enter to edit");
         }
         return;
     }
@@ -401,7 +407,7 @@ void AppSettings::update_pending_volume_from_input()
         if (!std::isdigit(static_cast<unsigned char>(ch))) {
             _is_pending_valid = false;
             _is_dirty         = false;
-            _status_message   = "Invalid input. Enter to restore";
+            log_status(getAppInfo().name, "Invalid input. Enter to restore");
             return;
         }
 
@@ -409,7 +415,7 @@ void AppSettings::update_pending_volume_from_input()
         if (value > std::numeric_limits<int32_t>::max()) {
             _is_pending_valid = false;
             _is_dirty         = false;
-            _status_message   = "Value too large. Enter to restore";
+            log_status(getAppInfo().name, "Value too large. Enter to restore");
             return;
         }
     }
@@ -419,7 +425,7 @@ void AppSettings::update_pending_volume_from_input()
     if (value < min_value || value > max_value) {
         _is_pending_valid = false;
         _is_dirty         = false;
-        _status_message   = "Out of range. Enter to restore";
+        log_status(getAppInfo().name, "Out of range. Enter to restore");
         return;
     }
 
@@ -429,7 +435,7 @@ void AppSettings::update_pending_volume_from_input()
     if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
         _is_pending_valid = false;
         _is_dirty         = false;
-        _status_message   = setting->validationMessage();
+        log_status(getAppInfo().name, setting->validationMessage());
         return;
     }
 
@@ -441,12 +447,12 @@ void AppSettings::update_pending_volume_from_input()
 
     if (_is_editing) {
         if (_is_dirty) {
-            _status_message = "Edited value active (not saved)";
+            log_status(getAppInfo().name, "Edited value active (not saved)");
         } else {
-            _status_message = "Matches saved value";
+            log_status(getAppInfo().name, "Matches saved value");
         }
     } else {
-        _status_message = "Press Enter to edit";
+        log_status(getAppInfo().name, "Press Enter to edit");
     }
 }
 
@@ -465,13 +471,13 @@ void AppSettings::start_editing()
 {
     auto* setting = current_setting();
     if (setting == nullptr) {
-        _status_message = "No setting selected";
+        log_status(getAppInfo().name, "No setting selected");
         return;
     }
 
     if (setting->definition().type != settings_model::SettingType::kInt) {
         _is_editing     = false;
-        _status_message = "Current type not editable";
+        log_status(getAppInfo().name, "Current type not editable");
         _needs_redraw   = true;
         return;
     }
@@ -479,21 +485,21 @@ void AppSettings::start_editing()
     _is_editing            = true;
     _pre_edit_volume       = _pending_volume;
     _replace_on_next_digit = true;
-    _status_message        = "Editing value. Enter to confirm";
+    log_status(getAppInfo().name, "Editing value. Enter to confirm");
 }
 
 void AppSettings::confirm_editing()
 {
     if (!_is_pending_valid || _volume_input.empty()) {
         restore_pre_edit_volume();
-        _status_message = "Invalid input restored";
+        log_status(getAppInfo().name, "Invalid input restored");
     } else {
         _volume_input = std::to_string(_pending_volume);
 
         if (_is_dirty) {
-            _status_message = "Edited value active (not saved)";
+            log_status(getAppInfo().name, "Edited value active (not saved)");
         } else {
-            _status_message = "Matches saved value";
+            log_status(getAppInfo().name, "Matches saved value");
         }
     }
 
@@ -525,26 +531,26 @@ void AppSettings::save_to_nvs()
 {
     auto* setting = current_setting();
     if (setting == nullptr) {
-        _status_message = "No setting selected";
+        log_status(getAppInfo().name, "No setting selected");
         return;
     }
 
     if (!_is_pending_valid || (_is_editing && _volume_input.empty())) {
-        _status_message = "Save blocked: invalid value";
+        log_status(getAppInfo().name, "Save blocked: invalid value");
         return;
     }
 
     if (!setting->isDirty()) {
-        _status_message = "Already saved";
+        log_status(getAppInfo().name, "Already saved");
         return;
     }
 
     if (!setting->save(GetHAL().getSettings())) {
-        _status_message = "Save failed";
+        log_status(getAppInfo().name, "Save failed");
         update_dirty_state();
         return;
     }
 
     update_dirty_state();
-    _status_message = "Saved current setting";
+    log_status(getAppInfo().name, "Saved current setting");
 }
