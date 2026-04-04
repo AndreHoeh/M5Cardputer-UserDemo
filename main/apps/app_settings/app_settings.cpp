@@ -27,7 +27,21 @@ void AppSettings::onOpen()
 {
     mclog::tagInfo(getAppInfo().name, "on open");
 
-    _pending_volume        = GetHAL().getSpeakerVolume();
+    initialize_settings_model();
+    _settings_registry.loadAll(GetHAL().getSettings());
+    _volume_setting = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY);
+
+    int loaded_volume = GetHAL().getSpeakerVolume();
+    if (_volume_setting != nullptr) {
+        int32_t model_volume = loaded_volume;
+        if (_volume_setting->getInt(model_volume)) {
+            loaded_volume = std::clamp(static_cast<int>(model_volume), 0, 255);
+        } else {
+            _volume_setting->setInt(loaded_volume);
+        }
+    }
+
+    _pending_volume        = loaded_volume;
     _pre_edit_volume       = _pending_volume;
     _volume_input          = std::to_string(_pending_volume);
     _is_editing            = false;
@@ -42,6 +56,22 @@ void AppSettings::onOpen()
     render_interface();
     GetHAL().pushCanvas();
     _needs_redraw = false;
+}
+
+void AppSettings::initialize_settings_model()
+{
+    if (_settings_registry.size() == 0) {
+        settings_model::SettingDefinition volume_setting;
+        volume_setting.key           = SPEAKER_VOLUME_SETTING_KEY;
+        volume_setting.name          = "Volume";
+        volume_setting.type          = settings_model::SettingType::kInt;
+        volume_setting.default_value = static_cast<int32_t>(GetHAL().getSpeakerVolume());
+        volume_setting.range.int_min = 0;
+        volume_setting.range.int_max = 255;
+        _settings_registry.registerSetting(std::move(volume_setting));
+    }
+
+    _volume_setting = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY);
 }
 
 void AppSettings::onRunning()
@@ -223,6 +253,13 @@ void AppSettings::update_pending_volume_from_input()
     _pending_volume   = value;
     _is_pending_valid = true;
 
+    if (_volume_setting != nullptr && !_volume_setting->setInt(static_cast<int32_t>(_pending_volume))) {
+        _is_pending_valid = false;
+        _is_dirty         = false;
+        _status_message   = _volume_setting->validationMessage();
+        return;
+    }
+
     if (_is_editing) {
         GetHAL().setSpeakerVolume(static_cast<uint8_t>(_pending_volume), false);
     }
@@ -242,7 +279,12 @@ void AppSettings::update_pending_volume_from_input()
 
 void AppSettings::update_dirty_state()
 {
-    _is_dirty = (_pending_volume != read_persisted_volume());
+    if (_volume_setting == nullptr) {
+        _is_dirty = false;
+        return;
+    }
+
+    _is_dirty = _volume_setting->isDirty();
 }
 
 void AppSettings::start_editing()
@@ -278,6 +320,10 @@ void AppSettings::restore_pre_edit_volume()
     _volume_input     = std::to_string(_pending_volume);
     _is_pending_valid = true;
 
+    if (_volume_setting != nullptr) {
+        _volume_setting->setInt(static_cast<int32_t>(_pending_volume));
+    }
+
     GetHAL().setSpeakerVolume(static_cast<uint8_t>(_pending_volume), false);
     update_dirty_state();
 }
@@ -294,13 +340,12 @@ void AppSettings::save_to_nvs()
         return;
     }
 
-    GetHAL().setSpeakerVolume(static_cast<uint8_t>(_pending_volume), true);
+    if (!_settings_registry.saveDirty(GetHAL().getSettings())) {
+        _status_message = "Save failed";
+        update_dirty_state();
+        return;
+    }
+
     update_dirty_state();
     _status_message = "Saved to NVS";
-}
-
-int AppSettings::read_persisted_volume()
-{
-    const int persisted = GetHAL().getSettings().GetInt(SPEAKER_VOLUME_SETTING_KEY, GetHAL().getSpeakerVolume());
-    return std::clamp(persisted, 0, 255);
 }

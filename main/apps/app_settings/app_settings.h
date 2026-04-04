@@ -1,5 +1,6 @@
 #pragma once
 #include <mooncake.h>
+#include "settings_registry.h"
 #include <hal/hal.h>
 #include <string>
 
@@ -13,6 +14,10 @@ public:
     void onClose() override;
 
 private:
+    settings_model::SettingsRegistry _settings_registry;
+    settings_model::Setting* _volume_setting = nullptr;
+    settings_model::Setting* _brightness_setting = nullptr;
+
     std::string _volume_input;
     int _pending_volume         = 0;
     int _pre_edit_volume        = 0;
@@ -26,6 +31,7 @@ private:
 
     void render_interface();
     void render_volume_setting();
+    void initialize_settings_model();
     void handle_key_event(const Keyboard::KeyEvent_t& keyEvent);
     void update_pending_volume_from_input();
     void update_dirty_state();
@@ -33,5 +39,4 @@ private:
     void confirm_editing();
     void restore_pre_edit_volume();
     void save_to_nvs();
-    int read_persisted_volume();
 };
