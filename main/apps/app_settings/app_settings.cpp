@@ -273,8 +273,6 @@ void AppSettings::render_interface()
     GetHAL().canvas.setTextSize(1);
     GetHAL().canvas.setCursor(0, 0);
 
-    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-    GetHAL().canvas.println("Settings");
     GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
 
     render_selected_setting();
@@ -293,9 +291,11 @@ void AppSettings::render_selected_setting()
         return;
     }
 
-    GetHAL().canvas.printf("Page %u/%u\n", static_cast<unsigned>(_selected_setting_index + 1),
+    GetHAL().canvas.printf("Settings page %u/%u\n", static_cast<unsigned>(_selected_setting_index + 1),
                            static_cast<unsigned>(total_settings));
+    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
     GetHAL().canvas.printf("%s : ", setting->definition().name.c_str());
+    GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
 
     if (_is_editing && !_is_pending_valid) {
         GetHAL().canvas.setTextColor(TFT_RED, THEME_COLOR_BG);
