@@ -73,21 +73,6 @@ void AppSettings::onOpen()
     initialize_settings_model();
     _settings_registry.loadAll(GetHAL().getSettings());
 
-    if (auto* volume_setting = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY)) {
-        int32_t volume = GetHAL().getSpeakerVolume();
-        if (volume_setting->getInt(volume)) {
-            GetHAL().setSpeakerVolume(static_cast<uint8_t>(std::clamp(static_cast<int>(volume), 0, 255)), false);
-        }
-    }
-
-    if (auto* brightness_setting = _settings_registry.findByKey(DISPLAY_BRIGHTNESS_SETTING_KEY)) {
-        int32_t brightness_value = DEFAULT_DISPLAY_BRIGHTNESS;
-        if (brightness_setting->getInt(brightness_value)) {
-            const int clamped_brightness = std::clamp(static_cast<int>(brightness_value), 0, 255);
-            GetHAL().display.setBrightness(static_cast<uint8_t>(clamped_brightness));
-        }
-    }
-
     _selected_setting_index = 0;
     _is_editing             = false;
     _replace_on_next_digit  = true;
