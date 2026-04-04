@@ -20,7 +20,6 @@ private:
 
     std::string _volume_input;
     int _pending_volume         = 0;
-    int _pre_edit_volume        = 0;
     bool _is_pending_valid      = false;
     bool _is_dirty              = false;
     bool _is_editing            = false;
@@ -41,6 +40,6 @@ private:
     void update_dirty_state();
     void start_editing();
     void confirm_editing();
-    void restore_pre_edit_volume();
+    void apply_fallback_value();
     void save_to_nvs();
 };

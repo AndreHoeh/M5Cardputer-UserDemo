@@ -29,6 +29,22 @@ int32_t get_setting_max_int(const settings_model::Setting& setting)
     return setting.definition().range.int_max.value_or(std::numeric_limits<int32_t>::max());
 }
 
+int32_t get_setting_fallback_int(const settings_model::Setting& setting)
+{
+    const int32_t min_value = get_setting_min_int(setting);
+    const int32_t max_value = get_setting_max_int(setting);
+    if (min_value > max_value) {
+        return 0;
+    }
+
+    int32_t fallback = 0;
+    if (const auto* default_int = std::get_if<int32_t>(&setting.definition().default_value)) {
+        fallback = *default_int;
+    }
+
+    return std::clamp(fallback, min_value, max_value);
+}
+
 void log_status(const std::string& tag, const char* message)
 {
     mclog::tagInfo(tag, "{}", message);
@@ -147,8 +163,7 @@ void AppSettings::refresh_selected_setting_state()
 {
     auto* setting = current_setting();
     if (setting == nullptr) {
-        _pending_volume  = 0;
-        _pre_edit_volume = 0;
+        _pending_volume = 0;
         _volume_input.clear();
         _is_pending_valid = false;
         _is_dirty         = false;
@@ -157,8 +172,7 @@ void AppSettings::refresh_selected_setting_state()
     }
 
     if (setting->definition().type != settings_model::SettingType::kInt) {
-        _pending_volume  = 0;
-        _pre_edit_volume = 0;
+        _pending_volume = 0;
         _volume_input.clear();
         _is_pending_valid = false;
         update_dirty_state();
@@ -172,8 +186,7 @@ void AppSettings::refresh_selected_setting_state()
         const int32_t max_value = get_setting_max_int(*setting);
 
         if (min_value > max_value) {
-            _pending_volume  = 0;
-            _pre_edit_volume = 0;
+            _pending_volume = 0;
             _volume_input.clear();
             _is_pending_valid = false;
             _is_dirty         = false;
@@ -183,8 +196,7 @@ void AppSettings::refresh_selected_setting_state()
 
         value = std::clamp<int32_t>(0, min_value, max_value);
         if (!setting->setInt(value)) {
-            _pending_volume  = 0;
-            _pre_edit_volume = 0;
+            _pending_volume = 0;
             _volume_input.clear();
             _is_pending_valid = false;
             update_dirty_state();
@@ -194,7 +206,6 @@ void AppSettings::refresh_selected_setting_state()
     }
 
     _pending_volume        = static_cast<int>(value);
-    _pre_edit_volume       = _pending_volume;
     _volume_input          = std::to_string(_pending_volume);
     _is_pending_valid      = true;
     _replace_on_next_digit = true;
@@ -327,10 +338,6 @@ void AppSettings::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
     const bool navigate_left  = (keyEvent.keyCode == KEY_COMMA);  // red left arrow on keyboard
     const bool navigate_right = (keyEvent.keyCode == KEY_SLASH);  // red right arrow on keyboard
     if (navigate_left || navigate_right) {
-        if (_is_editing) {
-            confirm_editing();
-        }
-
         if (!navigate_setting(navigate_left ? -1 : 1)) {
             log_status(getAppInfo().name, "Navigation failed");
         }
@@ -459,34 +466,15 @@ void AppSettings::update_pending_volume_from_input()
     if (value < min_value || value > max_value) {
         _is_pending_valid = false;
         update_dirty_state();
-        log_status(getAppInfo().name, "Out of range. Enter to restore");
+        log_status(getAppInfo().name, "Out of range. Enter to apply fallback");
         return;
     }
 
     _pending_volume   = static_cast<int>(value);
     _is_pending_valid = true;
 
-    if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
-        _is_pending_valid = false;
-        update_dirty_state();
-        log_status(getAppInfo().name, setting->validationMessage());
-        return;
-    }
-
     if (_is_editing) {
-        if (!apply_selected_setting_runtime(_pending_volume)) {
-            log_status(getAppInfo().name, "Runtime apply not supported");
-        }
-    }
-
-    update_dirty_state();
-
-    if (_is_editing) {
-        if (_is_dirty) {
-            log_status(getAppInfo().name, "Edited value active (not saved)");
-        } else {
-            log_status(getAppInfo().name, "Matches saved value");
-        }
+        log_status(getAppInfo().name, "Value valid. Enter to confirm");
     } else {
         log_status(getAppInfo().name, "Press Enter to edit");
     }
@@ -519,17 +507,48 @@ void AppSettings::start_editing()
     }
 
     _is_editing            = true;
-    _pre_edit_volume       = _pending_volume;
     _replace_on_next_digit = true;
     log_status(getAppInfo().name, "Editing value. Enter to confirm");
 }
 
 void AppSettings::confirm_editing()
 {
+    auto* setting = current_setting();
+    if (setting == nullptr) {
+        _is_editing            = false;
+        _replace_on_next_digit = true;
+        log_status(getAppInfo().name, "No setting selected");
+        return;
+    }
+
+    if (setting->definition().type != settings_model::SettingType::kInt) {
+        _is_editing            = false;
+        _replace_on_next_digit = true;
+        log_status(getAppInfo().name, "Current type not editable");
+        return;
+    }
+
     if (!_is_pending_valid || _volume_input.empty()) {
-        restore_pre_edit_volume();
-        log_status(getAppInfo().name, "Invalid input restored");
+        apply_fallback_value();
+        if (_is_pending_valid) {
+            log_status(getAppInfo().name, "Invalid input: fallback applied");
+        }
     } else {
+        if (!setting->setInt(static_cast<int32_t>(_pending_volume))) {
+            apply_fallback_value();
+            if (_is_pending_valid) {
+                log_status(getAppInfo().name, "Confirm failed: fallback applied");
+            }
+            _is_editing            = false;
+            _replace_on_next_digit = true;
+            return;
+        }
+
+        if (!apply_selected_setting_runtime(_pending_volume)) {
+            log_status(getAppInfo().name, "Runtime apply not supported");
+        }
+
+        update_dirty_state();
         _volume_input = std::to_string(_pending_volume);
 
         if (_is_dirty) {
@@ -543,17 +562,35 @@ void AppSettings::confirm_editing()
     _replace_on_next_digit = true;
 }
 
-void AppSettings::restore_pre_edit_volume()
+void AppSettings::apply_fallback_value()
 {
     auto* setting = current_setting();
     if (setting == nullptr) {
+        _is_pending_valid = false;
+        _is_dirty         = false;
+        _volume_input.clear();
+        _pending_volume = 0;
+        log_status(getAppInfo().name, "No setting selected");
+        return;
+    }
+
+    if (setting->definition().type != settings_model::SettingType::kInt) {
+        _is_pending_valid = false;
+        update_dirty_state();
+        log_status(getAppInfo().name, "Current type not editable");
         return;
     }
 
     const int32_t min_value = get_setting_min_int(*setting);
     const int32_t max_value = get_setting_max_int(*setting);
+    if (min_value > max_value) {
+        _is_pending_valid = false;
+        update_dirty_state();
+        log_status(getAppInfo().name, "Invalid setting range");
+        return;
+    }
 
-    _pending_volume   = std::clamp(_pre_edit_volume, static_cast<int>(min_value), static_cast<int>(max_value));
+    _pending_volume   = static_cast<int>(get_setting_fallback_int(*setting));
     _volume_input     = std::to_string(_pending_volume);
     _is_pending_valid = true;
 
