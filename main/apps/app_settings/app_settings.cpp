@@ -10,8 +10,10 @@
 using namespace mooncake;
 
 namespace {
-constexpr char SPEAKER_VOLUME_SETTING_KEY[] = "speaker_volume";
-}
+constexpr char SPEAKER_VOLUME_SETTING_KEY[]     = "speaker_volume";
+constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "display_brightness";
+constexpr int DEFAULT_DISPLAY_BRIGHTNESS        = 255;
+}  // namespace
 
 AppSettings::AppSettings()
 {
@@ -29,7 +31,16 @@ void AppSettings::onOpen()
 
     initialize_settings_model();
     _settings_registry.loadAll(GetHAL().getSettings());
-    _volume_setting = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY);
+    _volume_setting     = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY);
+    _brightness_setting = _settings_registry.findByKey(DISPLAY_BRIGHTNESS_SETTING_KEY);
+
+    if (_brightness_setting != nullptr) {
+        int32_t brightness_value = DEFAULT_DISPLAY_BRIGHTNESS;
+        if (_brightness_setting->getInt(brightness_value)) {
+            const int clamped_brightness = std::clamp(static_cast<int>(brightness_value), 0, 255);
+            GetHAL().display.setBrightness(static_cast<uint8_t>(clamped_brightness));
+        }
+    }
 
     int loaded_volume = GetHAL().getSpeakerVolume();
     if (_volume_setting != nullptr) {
@@ -69,9 +80,19 @@ void AppSettings::initialize_settings_model()
         volume_setting.range.int_min = 0;
         volume_setting.range.int_max = 255;
         _settings_registry.registerSetting(std::move(volume_setting));
+
+        settings_model::SettingDefinition brightness_setting;
+        brightness_setting.key           = DISPLAY_BRIGHTNESS_SETTING_KEY;
+        brightness_setting.name          = "Brightness";
+        brightness_setting.type          = settings_model::SettingType::kInt;
+        brightness_setting.default_value = static_cast<int32_t>(DEFAULT_DISPLAY_BRIGHTNESS);
+        brightness_setting.range.int_min = 0;
+        brightness_setting.range.int_max = 255;
+        _settings_registry.registerSetting(std::move(brightness_setting));
     }
 
-    _volume_setting = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY);
+    _volume_setting     = _settings_registry.findByKey(SPEAKER_VOLUME_SETTING_KEY);
+    _brightness_setting = _settings_registry.findByKey(DISPLAY_BRIGHTNESS_SETTING_KEY);
 }
 
 void AppSettings::onRunning()

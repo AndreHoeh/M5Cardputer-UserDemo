@@ -15,7 +15,7 @@ public:
 
 private:
     settings_model::SettingsRegistry _settings_registry;
-    settings_model::Setting* _volume_setting = nullptr;
+    settings_model::Setting* _volume_setting     = nullptr;
     settings_model::Setting* _brightness_setting = nullptr;
 
     std::string _volume_input;
