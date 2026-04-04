@@ -11,9 +11,13 @@
 using namespace mooncake;
 
 namespace {
+constexpr size_t NVS_KEY_MAX_LEN                = 15;
 constexpr char SPEAKER_VOLUME_SETTING_KEY[]     = "speaker_volume";
-constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "display_brightness";
+constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
 constexpr int DEFAULT_DISPLAY_BRIGHTNESS        = 255;
+
+static_assert(sizeof(SPEAKER_VOLUME_SETTING_KEY) - 1 <= NVS_KEY_MAX_LEN, "NVS key is too long: speaker volume");
+static_assert(sizeof(DISPLAY_BRIGHTNESS_SETTING_KEY) - 1 <= NVS_KEY_MAX_LEN, "NVS key is too long: display brightness");
 
 int32_t get_setting_min_int(const settings_model::Setting& setting)
 {
