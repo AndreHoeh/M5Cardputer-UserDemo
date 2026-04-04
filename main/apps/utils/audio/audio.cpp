@@ -8,13 +8,13 @@
 #include <cstdlib>
 #include <cstdint>
 #include <algorithm>
+#include "esp_random.h"
 #include <hal/hal.h>
 #include <mooncake_log.h>
-#include <random>
 
 namespace audio {
 
-static std::vector<int> c_major_scale = {60, 62, 64, 65, 67, 69, 71};  // C大调音阶（C D E F G A B）
+const int c_major_scale[] = {60, 62, 64, 65, 67, 69, 71};  // C大调音阶（C D E F G A B）
 
 void play_tone(int frequency, double durationSec)
 {
@@ -100,12 +100,9 @@ void play_random_tone(int semitoneShift = 0, double durationSec = 0.15)
         return;
     }
 
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dist(0, static_cast<int>(c_major_scale.size()) - 1);
-
-    int index = dist(gen);
-    int midi  = c_major_scale[index] + semitoneShift;
+    uint32_t rnd = esp_random();
+    int index    = static_cast<int>(rnd % (sizeof(c_major_scale) / sizeof(c_major_scale[0])));
+    int midi     = c_major_scale[index] + semitoneShift;
 
     play_tone_from_midi(midi, durationSec);
 }
@@ -125,25 +122,25 @@ static void _keyboard_sfx_on_key_event(const Keyboard::KeyEvent_t& event)
     switch (event.keyCode) {
         case KEY_1:
             play_tone_from_midi(c_major_scale[0] + semitoneShift, 0.02);
-            return;
+            break;
         case KEY_2:
             play_tone_from_midi(c_major_scale[1] + semitoneShift, 0.02);
-            return;
+            break;
         case KEY_3:
             play_tone_from_midi(c_major_scale[2] + semitoneShift, 0.02);
-            return;
+            break;
         case KEY_4:
             play_tone_from_midi(c_major_scale[3] + semitoneShift, 0.02);
-            return;
+            break;
         case KEY_5:
             play_tone_from_midi(c_major_scale[4] + semitoneShift, 0.02);
-            return;
+            break;
         case KEY_6:
             play_tone_from_midi(c_major_scale[5] + semitoneShift, 0.02);
-            return;
+            break;
         case KEY_7:
             play_tone_from_midi(c_major_scale[6] + semitoneShift, 0.02);
-            return;
+            break;
         default:
             play_random_tone(semitoneShift, 0.02);
     }

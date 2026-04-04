@@ -49,6 +49,8 @@ void Launcher::render_system_bar()
         _data.system_state.bat_level = fmt::format("{}", bat_level);
         // mclog::tagInfo("system_bar", "get bat level: {}", bat_level);
         // printf("b:%d\n", bat_level);
+        auto bat_voltage               = GetHAL().getBatVoltage();
+        _data.system_state.bat_voltage = fmt::format("{:.2f}V", bat_voltage / 1000.0f);
 
         if (bat_level >= 100) {
             _data.system_state.bat_state = 1;
@@ -69,16 +71,15 @@ void Launcher::render_system_bar()
 
     GetHAL().canvasSystemBar.fillScreen(THEME_COLOR_BG);
     GetHAL().canvasSystemBar.fillSmoothRoundRect(margin_x, margin_y, GetHAL().canvasSystemBar.width() - margin_x * 2,
-                                                 GetHAL().canvasSystemBar.height() - margin_y * 2,
-                                                 (GetHAL().canvasSystemBar.height() - margin_y * 2) / 2,
+                                                 GetHAL().canvasSystemBar.height() - margin_y * 2, 7,
                                                  THEME_COLOR_SYSTEM_BAR);
 
     GetHAL().canvasSystemBar.setFont(FONT_BASIC);
 
     // Time
     GetHAL().canvasSystemBar.setTextColor(THEME_COLOR_SYSTEM_BAR_TEXT);
-    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.time.c_str(), GetHAL().canvasSystemBar.width() / 2,
-                                              GetHAL().canvasSystemBar.height() / 2 - FONT_HEIGHT / 2);
+    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.time.c_str(), 54,
+                                              GetHAL().canvasSystemBar.height() / 2 - FONT_HEIGHT / 2 - 1);
 
     // Wifi
     int x = 15;
@@ -95,6 +96,17 @@ void Launcher::render_system_bar()
     } else if (_data.system_state.wifi_state == 5) {
         GetHAL().canvasSystemBar.pushImage(x, y, 16, 16, image_data_wifi5);
     }
+
+    // Free Mem
+    GetHAL().canvasSystemBar.setTextColor(TFT_DARKGRAY);
+    GetHAL().canvasSystemBar.drawRightString(std::to_string(esp_get_free_heap_size() / 1000).append("k").c_str(),
+                                             GetHAL().canvasSystemBar.width() - 50,
+                                             GetHAL().canvasSystemBar.height() / 2 - 3 + 4, FONT_SMALL);
+
+    // Bat votage
+    GetHAL().canvasSystemBar.drawRightString(_data.system_state.bat_voltage.c_str(),
+                                             GetHAL().canvasSystemBar.width() - 50,
+                                             GetHAL().canvasSystemBar.height() / 2 - 3 - 4, FONT_SMALL);
 
     // Bat icon
     x = GetHAL().canvasSystemBar.width() - 45;

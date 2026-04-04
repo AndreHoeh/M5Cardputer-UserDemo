@@ -73,6 +73,10 @@ public:
     {
         return M5.Power.getBatteryLevel();
     }
+    inline int16_t getBatVoltage()
+    {
+        return M5.Power.getBatteryVoltage();
+    }
 
     /* ---------------------------------- WiFi ---------------------------------- */
     using ScanResult_t = std::pair<int, std::string>;
