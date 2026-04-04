@@ -14,8 +14,10 @@
 #include <memory>
 
 static std::unique_ptr<Hal> _hal_instance;
-static const std::string _tag                      = "HAL";
-static constexpr char SPEAKER_VOLUME_SETTING_KEY[] = "speaker_volume";
+static const std::string _tag                          = "HAL";
+static constexpr char SPEAKER_VOLUME_SETTING_KEY[]     = "speaker_volume";
+static constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
+static constexpr int32_t DEFAULT_DISPLAY_BRIGHTNESS    = 255;
 
 Hal& GetHAL()
 {
@@ -149,6 +151,10 @@ void Hal::setting_init()
     const int32_t stored_volume  = _settings->GetInt(SPEAKER_VOLUME_SETTING_KEY, DEFAULT_SPEAKER_VOLUME);
     const int32_t clamped_volume = std::clamp<int32_t>(stored_volume, 0, 255);
     setSpeakerVolume(static_cast<uint8_t>(clamped_volume), false);
+
+    const int32_t stored_brightness  = _settings->GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS);
+    const int32_t clamped_brightness = std::clamp<int32_t>(stored_brightness, 0, 255);
+    display.setBrightness(static_cast<uint8_t>(clamped_brightness));
 }
 
 /* -------------------------------------------------------------------------- */

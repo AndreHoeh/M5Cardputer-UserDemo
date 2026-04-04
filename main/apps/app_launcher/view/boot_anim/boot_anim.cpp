@@ -18,7 +18,18 @@ using namespace smooth_ui_toolkit;
 
 void start_arkanoid();
 
-static void fancy_logo_fade_in()
+namespace {
+constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
+constexpr int DEFAULT_DISPLAY_BRIGHTNESS        = 255;
+
+uint8_t get_startup_brightness()
+{
+    const int32_t stored = GetHAL().getSettings().GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS);
+    return static_cast<uint8_t>(std::clamp<int32_t>(stored, 0, 255));
+}
+}  // namespace
+
+static void fancy_logo_fade_in(uint8_t target_brightness)
 {
     GetHAL().display.pushImage(63, 32, 114, 62, image_data_logo_adv);
 
@@ -26,7 +37,7 @@ static void fancy_logo_fade_in()
     brightness.easingOptions().duration = 600;
 
     GetHAL().display.setBrightness(0);
-    brightness      = 255;
+    brightness      = target_brightness;
     auto time_count = GetHAL().millis();
     while (GetHAL().millis() - time_count < 1200) {
         GetHAL().feedTheDog();
@@ -36,23 +47,24 @@ static void fancy_logo_fade_in()
         GetHAL().display.setBrightness(brightness);
     }
 
-    GetHAL().display.setBrightness(255);
+    GetHAL().display.setBrightness(target_brightness);
 }
 
 void Launcher::boot_anim()
 {
     mclog::tagInfo(getAppInfo().name, "start boot anim");
+    const uint8_t startup_brightness = get_startup_brightness();
 
     // GetHAL().delay(300);  // Codec init takes some time
 
     // If software restart
     if (esp_reset_reason() != ESP_RST_POWERON) {
         mclog::tagInfo(getAppInfo().name, "not power on reset, skip boot anim");
-        GetHAL().display.setBrightness(255);
+        GetHAL().display.setBrightness(startup_brightness);
         return;
     }
 
-    fancy_logo_fade_in();
+    fancy_logo_fade_in(startup_brightness);
 
     // Show boot image
     GetHAL().display.pushImage(0, 0, 240, 135, image_data_logo);
