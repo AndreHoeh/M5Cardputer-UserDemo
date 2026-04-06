@@ -52,22 +52,22 @@ void Launcher::render_system_bar()
         auto bat_voltage               = GetHAL().getBatVoltage();
         _data.system_state.bat_voltage = fmt::format("{:.2f}V", bat_voltage / 1000.0f);
 
-        if (bat_level >= 100) {
-            _data.system_state.bat_state = 1;
-        } else if (bat_level >= 75) {
-            _data.system_state.bat_state = 2;
-        } else if (bat_level >= 50) {
-            _data.system_state.bat_state = 3;
-        } else {
+        if (bat_level <= 25) {
             _data.system_state.bat_state = 4;
+        } else if (bat_level <= 50) {
+            _data.system_state.bat_state = 3;
+        } else if (bat_level <= 75) {
+            _data.system_state.bat_state = 2;
+        } else {
+            _data.system_state.bat_state = 1;
         }
 
         _data.bat_update_time_count = GetHAL().millis();
     }
 
     // Backgound
-    int margin_x = 5;
-    int margin_y = 4;
+    constexpr int margin_x = 5;
+    constexpr int margin_y = 4;
 
     GetHAL().canvasSystemBar.fillScreen(THEME_COLOR_BG);
     GetHAL().canvasSystemBar.fillSmoothRoundRect(margin_x, margin_y, GetHAL().canvasSystemBar.width() - margin_x * 2,

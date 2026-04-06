@@ -22,8 +22,8 @@
 void Launcher::render_keyboard_bar()
 {
     // Backgound
-    int margin_x = 4;
-    int margin_y = 2;
+    constexpr int margin_x = 0;
+    constexpr int margin_y = 0;
 
     GetHAL().canvasKeyboardBar.fillScreen(THEME_COLOR_BG);
     GetHAL().canvasKeyboardBar.fillSmoothRoundRect(
@@ -31,11 +31,11 @@ void Launcher::render_keyboard_bar()
         GetHAL().canvasKeyboardBar.height() - margin_y * 2, 7, THEME_COLOR_KB_BAR);
 
     // render state
-    int x      = 7;
-    int y      = 20;
-    int width  = 22;
-    int height = 17;
-    int gap_y  = 3;
+    int y                = 20;
+    constexpr int x      = 7;
+    constexpr int width  = 22;
+    constexpr int height = 17;
+    constexpr int gap_y  = 3;
 
     if (_data.keybaord_state.caps_lock) {
         GetHAL().canvasKeyboardBar.pushImage(x, y, width, height, image_data_Aa);

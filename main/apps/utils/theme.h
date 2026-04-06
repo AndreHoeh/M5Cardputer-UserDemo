@@ -10,12 +10,12 @@
  */
 #pragma once
 
-#define THEME_COLOR_BG               (uint32_t)(0x333333)
+#define THEME_COLOR_BG               (uint32_t)(0x14213d)
 #define THEME_COLOR_SYSTEM_BAR       (uint32_t)(0x99FF00)
 #define THEME_COLOR_SYSTEM_BAR_TEXT  TFT_BLACK
-#define THEME_COLOR_KB_BAR           TFT_LIGHTGREY
-#define THEME_COLOR_KB_BAR_ICON_BG   TFT_DARKGREY
-#define THEME_COLOR_KB_BAR_ICON_TEXT TFT_WHITE
+#define THEME_COLOR_KB_BAR           (uint32_t)(0xeae2b7)
+#define THEME_COLOR_KB_BAR_ICON_BG   (uint32_t)(0x14213d)
+#define THEME_COLOR_KB_BAR_ICON_TEXT (uint32_t)(0xf2e8cf)
 #define THEME_COLOR_ICON             (uint32_t)(0xE6E6E6)
 #define ICON_WIDTH                   48
 #define ICON_GAP                     20
