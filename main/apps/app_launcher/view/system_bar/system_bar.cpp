@@ -41,16 +41,20 @@ void Launcher::render_system_bar()
     static struct tm timeinfo;
     time(&now);
     localtime_r(&now, &timeinfo);
-    _data.system_state.time = fmt::format("{:02d}:{:02d}", timeinfo.tm_hour, timeinfo.tm_min);
+    snprintf(_data.system_state.time, sizeof(_data.system_state.time), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
 
     // Bat
     if ((GetHAL().millis() - _data.bat_update_time_count) > 5000 || _data.bat_update_time_count == 0) {
-        auto bat_level               = GetHAL().getBatLevel();
-        _data.system_state.bat_level = fmt::format("{}", bat_level);
+        auto bat_level = GetHAL().getBatLevel();
+        snprintf(_data.system_state.bat_level, sizeof(_data.system_state.bat_level), "%d", bat_level);
         // mclog::tagInfo("system_bar", "get bat level: {}", bat_level);
         // printf("b:%d\n", bat_level);
-        auto bat_voltage               = GetHAL().getBatVoltage();
-        _data.system_state.bat_voltage = fmt::format("{:.2f}V", bat_voltage / 1000.0f);
+        auto bat_voltage = GetHAL().getBatVoltage();
+        if (bat_voltage < 0) {
+            bat_voltage = 0;
+        }
+        snprintf(_data.system_state.bat_voltage, sizeof(_data.system_state.bat_voltage), "%d.%02dV", bat_voltage / 1000,
+                 (bat_voltage % 1000) / 10);
 
         if (bat_level <= 25) {
             _data.system_state.bat_state = 4;
@@ -78,7 +82,7 @@ void Launcher::render_system_bar()
 
     // Time
     GetHAL().canvasSystemBar.setTextColor(THEME_COLOR_SYSTEM_BAR_TEXT);
-    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.time.c_str(), 54,
+    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.time, 54,
                                               GetHAL().canvasSystemBar.height() / 2 - FONT_HEIGHT / 2 - 1);
 
     // Wifi
@@ -99,13 +103,13 @@ void Launcher::render_system_bar()
 
     // Free Mem
     GetHAL().canvasSystemBar.setTextColor(TFT_DARKGRAY);
-    GetHAL().canvasSystemBar.drawRightString(std::to_string(esp_get_free_heap_size() / 1000).append("k").c_str(),
-                                             GetHAL().canvasSystemBar.width() - 50,
+    snprintf(_data.string_buffer, sizeof(_data.string_buffer), "%luk",
+             static_cast<unsigned long>(esp_get_free_heap_size() / 1000));
+    GetHAL().canvasSystemBar.drawRightString(_data.string_buffer, GetHAL().canvasSystemBar.width() - 50,
                                              GetHAL().canvasSystemBar.height() / 2 - 3 + 4, FONT_SMALL);
 
     // Bat votage
-    GetHAL().canvasSystemBar.drawRightString(_data.system_state.bat_voltage.c_str(),
-                                             GetHAL().canvasSystemBar.width() - 50,
+    GetHAL().canvasSystemBar.drawRightString(_data.system_state.bat_voltage, GetHAL().canvasSystemBar.width() - 50,
                                              GetHAL().canvasSystemBar.height() / 2 - 3 - 4, FONT_SMALL);
 
     // Bat icon
@@ -125,7 +129,7 @@ void Launcher::render_system_bar()
     // Bat level
     GetHAL().canvasSystemBar.setFont(&fonts::Font0);
     GetHAL().canvasSystemBar.setTextColor((uint32_t)0x000000);
-    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.bat_level.c_str(), 176,
+    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.bat_level, 176,
                                               GetHAL().canvasSystemBar.height() / 2 - 3);
 
     // Push

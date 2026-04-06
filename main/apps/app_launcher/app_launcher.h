@@ -10,7 +10,6 @@
 #include <iostream>
 #include <mooncake.h>
 #include <stdint.h>
-#include <string>
 
 /**
  * @brief
@@ -39,10 +38,10 @@ private:
         // 1 ~ 5
         uint8_t wifi_state = 5;
         // 1 ~ 4
-        uint8_t bat_state       = 1;
-        std::string bat_level   = "100%";
-        std::string time        = "12:34";
-        std::string bat_voltage = "4.20V";
+        uint8_t bat_state   = 1;
+        char bat_level[4]   = "100";
+        char time[6]        = "12:34";
+        char bat_voltage[8] = "4.20V";
     };
 
     struct Data_t {
