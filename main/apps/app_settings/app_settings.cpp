@@ -14,10 +14,14 @@ namespace {
 constexpr size_t NVS_KEY_MAX_LEN                = 15;
 constexpr char SPEAKER_VOLUME_SETTING_KEY[]     = "speaker_volume";
 constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
+constexpr char IDLE_SLEEP_TIMEOUT_SETTING_KEY[] = "sleep_idle_ms";
 constexpr int DEFAULT_DISPLAY_BRIGHTNESS        = 255;
+constexpr int DEFAULT_IDLE_SLEEP_TIMEOUT_MS     = 0;
+constexpr int MAX_IDLE_SLEEP_TIMEOUT_MS         = 60 * 60 * 1000;
 
 static_assert(sizeof(SPEAKER_VOLUME_SETTING_KEY) - 1 <= NVS_KEY_MAX_LEN, "NVS key is too long: speaker volume");
 static_assert(sizeof(DISPLAY_BRIGHTNESS_SETTING_KEY) - 1 <= NVS_KEY_MAX_LEN, "NVS key is too long: display brightness");
+static_assert(sizeof(IDLE_SLEEP_TIMEOUT_SETTING_KEY) - 1 <= NVS_KEY_MAX_LEN, "NVS key is too long: idle sleep timeout");
 
 int32_t get_setting_min_int(const settings_model::Setting& setting)
 {
@@ -128,16 +132,23 @@ bool AppSettings::apply_selected_setting_runtime(int value)
         return false;
     }
 
-    const auto& key         = setting->definition().key;
-    const int clamped_value = std::clamp(value, 0, 255);
+    const auto& key = setting->definition().key;
 
     if (key == SPEAKER_VOLUME_SETTING_KEY) {
+        const int clamped_value = std::clamp(value, 0, 255);
         GetHAL().setSpeakerVolume(static_cast<uint8_t>(clamped_value), false);
         return true;
     }
 
     if (key == DISPLAY_BRIGHTNESS_SETTING_KEY) {
+        const int clamped_value = std::clamp(value, 0, 255);
         GetHAL().display.setBrightness(static_cast<uint8_t>(clamped_value));
+        return true;
+    }
+
+    if (key == IDLE_SLEEP_TIMEOUT_SETTING_KEY) {
+        const int clamped_value = std::clamp(value, 0, MAX_IDLE_SLEEP_TIMEOUT_MS);
+        GetHAL().setIdleSleepTimeoutMs(static_cast<uint32_t>(clamped_value), false);
         return true;
     }
 
@@ -221,6 +232,15 @@ void AppSettings::initialize_settings_model()
         brightness_setting.range.int_min = 0;
         brightness_setting.range.int_max = 255;
         _settings_registry.registerSetting(std::move(brightness_setting));
+
+        settings_model::SettingDefinition idle_sleep_timeout_setting;
+        idle_sleep_timeout_setting.key           = IDLE_SLEEP_TIMEOUT_SETTING_KEY;
+        idle_sleep_timeout_setting.name          = "Idle Sleep ms";
+        idle_sleep_timeout_setting.type          = settings_model::SettingType::kInt;
+        idle_sleep_timeout_setting.default_value = static_cast<int32_t>(DEFAULT_IDLE_SLEEP_TIMEOUT_MS);
+        idle_sleep_timeout_setting.range.int_min = 0;
+        idle_sleep_timeout_setting.range.int_max = MAX_IDLE_SLEEP_TIMEOUT_MS;
+        _settings_registry.registerSetting(std::move(idle_sleep_timeout_setting));
     }
 }
 

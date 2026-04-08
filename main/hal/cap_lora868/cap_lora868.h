@@ -13,6 +13,10 @@ class CapLoRa868 {
 public:
     bool init();
     void update();
+    bool isInited() const
+    {
+        return _is_inited;
+    }
 
     /* ---------------------------------- LoRa ---------------------------------- */
     struct lora_config {

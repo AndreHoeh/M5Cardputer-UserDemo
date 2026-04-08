@@ -17,6 +17,13 @@
 
 class Hal {
 public:
+    enum class SleepWakeReason {
+        None = 0,
+        Timer,
+        Keyboard,
+        Unknown,
+    };
+
     void init();
     void update();
 
@@ -32,6 +39,34 @@ public:
     void feedTheDog();
     std::vector<uint8_t> getDeviceMac();
     std::string getDeviceMacString();
+    void reportUserActivity();
+    void checkAndEnterSleepIfIdle();
+    bool enterLightSleep(std::uint32_t timerWakeupMs = 0);
+    void setIdleSleepTimeoutMs(std::uint32_t timeoutMs, bool persist = true);
+    std::uint32_t getIdleSleepTimeoutMs() const
+    {
+        return _idle_sleep_timeout_ms;
+    }
+    bool isIdleSleepEnabled() const
+    {
+        return _idle_sleep_timeout_ms > 0;
+    }
+    void setPendingSleepTimerMs(std::uint32_t durationMs)
+    {
+        _pending_sleep_timer_ms = durationMs;
+    }
+    void clearPendingSleepTimer()
+    {
+        _pending_sleep_timer_ms = 0;
+    }
+    std::uint32_t getPendingSleepTimerMs() const
+    {
+        return _pending_sleep_timer_ms;
+    }
+    SleepWakeReason getLastWakeReason() const
+    {
+        return _last_wake_reason;
+    }
 
     /* --------------------------------- Display -------------------------------- */
     M5GFX& display                = M5.Display;
@@ -138,19 +173,25 @@ public:
     CapLoRa868 capLora868;
 
 private:
-    static constexpr uint8_t DEFAULT_SPEAKER_VOLUME = 30;
+    static constexpr uint8_t DEFAULT_SPEAKER_VOLUME              = 30;
+    static constexpr std::uint32_t DEFAULT_IDLE_SLEEP_TIMEOUT_MS = 0;
+    static constexpr std::uint32_t MAX_IDLE_SLEEP_TIMEOUT_MS     = 60U * 60U * 1000U;
 
-    Settings* _settings             = nullptr;
-    uint8_t _speaker_volume         = DEFAULT_SPEAKER_VOLUME;
-    bool _is_wifi_inited            = false;
-    bool _is_wifi_connected         = false;
-    bool _is_esp_now_inited         = false;
-    bool _is_ir_inited              = false;
-    bool _is_ble_keyboard_inited    = false;
-    bool _is_usb_keyboard_inited    = false;
-    bool _is_sd_card_mounted        = false;
-    int _ble_keyboard_event_slot_id = -1;
-    int _usb_keyboard_event_slot_id = -1;
+    Settings* _settings                   = nullptr;
+    uint8_t _speaker_volume               = DEFAULT_SPEAKER_VOLUME;
+    bool _is_wifi_inited                  = false;
+    bool _is_wifi_connected               = false;
+    bool _is_esp_now_inited               = false;
+    bool _is_ir_inited                    = false;
+    bool _is_ble_keyboard_inited          = false;
+    bool _is_usb_keyboard_inited          = false;
+    bool _is_sd_card_mounted              = false;
+    std::uint32_t _idle_sleep_timeout_ms  = DEFAULT_IDLE_SLEEP_TIMEOUT_MS;
+    std::uint32_t _last_user_activity_ms  = 0;
+    std::uint32_t _pending_sleep_timer_ms = 0;
+    SleepWakeReason _last_wake_reason     = SleepWakeReason::None;
+    int _ble_keyboard_event_slot_id       = -1;
+    int _usb_keyboard_event_slot_id       = -1;
     std::unique_ptr<CapLoRa868> _cap_lora868;
 
     void display_init();
@@ -161,6 +202,8 @@ private:
     void setting_init();
     void spi_init();
     void sd_card_init();
+    bool canEnterLightSleep() const;
+    void updateWakeReason();
     void handle_ble_keyboard_event(const Keyboard::KeyEvent_t& keyEvent);
     void handle_usb_keyboard_event(const Keyboard::KeyEvent_t& keyEvent);
 };

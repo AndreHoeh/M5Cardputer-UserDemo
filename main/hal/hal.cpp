@@ -10,13 +10,16 @@
 #include <M5Unified.hpp>
 #include <algorithm>
 #include <cmath>
+#include <driver/gpio.h>
 #include <esp_mac.h>
+#include <esp_sleep.h>
 #include <memory>
 
 static std::unique_ptr<Hal> _hal_instance;
 static const std::string _tag                          = "HAL";
 static constexpr char SPEAKER_VOLUME_SETTING_KEY[]     = "speaker_volume";
 static constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
+static constexpr char IDLE_SLEEP_TIMEOUT_SETTING_KEY[] = "sleep_idle_ms";
 static constexpr int32_t DEFAULT_DISPLAY_BRIGHTNESS    = 255;
 
 Hal& GetHAL()
@@ -41,6 +44,8 @@ void Hal::init()
     keyboard_init();
     setting_init();
     spi_init();
+
+    _last_user_activity_ms = millis();
 }
 
 void Hal::update()
@@ -48,6 +53,10 @@ void Hal::update()
     M5.update();
     keyboard.update();
     capLora868.update();
+
+    if (keyboard.getLatestKeyEvent().keyCode != KEY_NONE || homeButton.wasPressed()) {
+        reportUserActivity();
+    }
 }
 
 void Hal::feedTheDog()
@@ -88,6 +97,113 @@ std::string Hal::getDeviceMacString()
 {
     auto mac = getDeviceMac();
     return fmt::format("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+void Hal::reportUserActivity()
+{
+    _last_user_activity_ms = millis();
+}
+
+void Hal::setIdleSleepTimeoutMs(std::uint32_t timeoutMs, bool persist)
+{
+    _idle_sleep_timeout_ms = std::min(timeoutMs, MAX_IDLE_SLEEP_TIMEOUT_MS);
+
+    if (persist && _settings) {
+        _settings->SetInt(IDLE_SLEEP_TIMEOUT_SETTING_KEY, static_cast<int32_t>(_idle_sleep_timeout_ms));
+    }
+
+    reportUserActivity();
+}
+
+// TODO there is currently a bug that if the device initiated esp-now before, it will not disable it automatically and
+// thus never enter light sleep
+bool Hal::canEnterLightSleep() const
+{
+    if (_is_wifi_inited || _is_esp_now_inited || _is_ble_keyboard_inited || _is_usb_keyboard_inited) {
+        return false;
+    }
+
+    if (capLora868.isInited()) {
+        return false;
+    }
+
+    return true;
+}
+
+void Hal::checkAndEnterSleepIfIdle()
+{
+    if (!isIdleSleepEnabled()) {
+        return;
+    }
+
+    const auto now = millis();
+    if ((now - _last_user_activity_ms) < _idle_sleep_timeout_ms) {
+        return;
+    }
+
+    if (!enterLightSleep()) {
+        reportUserActivity();
+    }
+}
+
+void Hal::updateWakeReason()
+{
+    switch (esp_sleep_get_wakeup_cause()) {
+        case ESP_SLEEP_WAKEUP_TIMER:
+            _last_wake_reason = SleepWakeReason::Timer;
+            break;
+        case ESP_SLEEP_WAKEUP_GPIO:
+        case ESP_SLEEP_WAKEUP_EXT0:
+        case ESP_SLEEP_WAKEUP_EXT1:
+            _last_wake_reason = SleepWakeReason::Keyboard;
+            break;
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+            _last_wake_reason = SleepWakeReason::None;
+            break;
+        default:
+            _last_wake_reason = SleepWakeReason::Unknown;
+            break;
+    }
+}
+
+bool Hal::enterLightSleep(std::uint32_t timerWakeupMs)
+{
+    if (!canEnterLightSleep()) {
+        mclog::tagDebug(_tag, "skip light sleep while peripheral modes are active");
+        return false;
+    }
+
+    const std::uint32_t effective_timer_ms = (timerWakeupMs > 0) ? timerWakeupMs : _pending_sleep_timer_ms;
+    const int32_t restore_brightness =
+        _settings ? _settings->GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS)
+                  : DEFAULT_DISPLAY_BRIGHTNESS;
+    const gpio_num_t keyboard_wake_pin = static_cast<gpio_num_t>(HAL_PIN_KEYBOARD_INT);
+
+    gpio_wakeup_disable(keyboard_wake_pin);
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+    ESP_ERROR_CHECK(gpio_wakeup_enable(keyboard_wake_pin, GPIO_INTR_LOW_LEVEL));
+
+    if (effective_timer_ms > 0) {
+        ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(effective_timer_ms) * 1000ULL));
+    }
+
+    display.setBrightness(0);
+
+    const esp_err_t ret = esp_light_sleep_start();
+
+    gpio_wakeup_disable(keyboard_wake_pin);
+    display.setBrightness(static_cast<uint8_t>(std::clamp<int32_t>(restore_brightness, 0, 255)));
+
+    if (ret != ESP_OK) {
+        mclog::tagError(_tag, "light sleep failed: {}", esp_err_to_name(ret));
+        reportUserActivity();
+        return false;
+    }
+
+    _pending_sleep_timer_ms = 0;
+    updateWakeReason();
+    reportUserActivity();
+    return true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -155,6 +271,12 @@ void Hal::setting_init()
     const int32_t stored_brightness  = _settings->GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS);
     const int32_t clamped_brightness = std::clamp<int32_t>(stored_brightness, 0, 255);
     display.setBrightness(static_cast<uint8_t>(clamped_brightness));
+
+    const int32_t stored_idle_sleep_timeout =
+        _settings->GetInt(IDLE_SLEEP_TIMEOUT_SETTING_KEY, DEFAULT_IDLE_SLEEP_TIMEOUT_MS);
+    const int32_t clamped_idle_sleep_timeout =
+        std::clamp<int32_t>(stored_idle_sleep_timeout, 0, static_cast<int32_t>(MAX_IDLE_SLEEP_TIMEOUT_MS));
+    _idle_sleep_timeout_ms = static_cast<std::uint32_t>(clamped_idle_sleep_timeout);
 }
 
 /* -------------------------------------------------------------------------- */
