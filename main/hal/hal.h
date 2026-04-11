@@ -40,6 +40,7 @@ public:
     std::vector<uint8_t> getDeviceMac();
     std::string getDeviceMacString();
     void reportUserActivity();
+    void loadSettingsFromSdConfig();
     void checkAndEnterSleepIfIdle();
     bool enterLightSleep(std::uint32_t timerWakeupMs = 0);
     bool setIdleSleepTimeoutMs(std::uint32_t timeoutMs);
@@ -209,7 +210,6 @@ private:
     void start_sntp();
     void stop_sntp();
     void setting_init();
-    void loadSettingsFromSdConfig();
     void spi_init();
     void sd_card_init();
     bool canEnterLightSleep() const;

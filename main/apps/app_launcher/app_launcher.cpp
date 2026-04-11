@@ -19,6 +19,7 @@ void Launcher::onCreate()
 
     // Init
     boot_anim();
+    GetHAL().loadSettingsFromSdConfig();
     start_menu();
     start_system_bar();
     start_keyboard_bar();

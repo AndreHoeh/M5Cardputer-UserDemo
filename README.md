@@ -30,6 +30,8 @@ idf.py flash
 
 System settings can be overridden at boot from `/sdcard/settings.conf`.
 
+The config is loaded during launcher startup, after the boot animation path has finished, instead of during early HAL initialization.
+
 Format rules:
 
 - One `key=value` pair per line.
