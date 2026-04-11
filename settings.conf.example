@@ -1,0 +1,5 @@
+# Copy this file to /sdcard/settings.conf to override default runtime settings.
+config_version=1
+speaker_volume=30
+display_brightness=200
+idle_sleep_timeout_ms=60000

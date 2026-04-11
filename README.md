@@ -26,6 +26,35 @@ idf.py build
 idf.py flash
 ```
 
+## SD Settings Config
+
+System settings can be overridden at boot from `/sdcard/settings.conf`.
+
+Format rules:
+
+- One `key=value` pair per line.
+- Empty lines are ignored.
+- Lines starting with `#` are treated as comments.
+- Inline comments after a value are also allowed with `#`.
+- Unknown keys and invalid values are ignored with a warning log.
+
+Supported keys:
+
+- `config_version=1`
+- `speaker_volume=0..255`
+- `display_brightness=0..255`
+- `idle_sleep_timeout_ms=0..3600000`
+
+Example:
+
+```conf
+# /sdcard/settings.conf
+config_version=1
+speaker_volume=30
+display_brightness=200
+idle_sleep_timeout_ms=60000
+```
+
 ## Acknowledgments
 
 This project references the following open-source libraries and resources:

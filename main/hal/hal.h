@@ -194,6 +194,7 @@ private:
     bool _is_ble_keyboard_inited          = false;
     bool _is_usb_keyboard_inited          = false;
     bool _is_sd_card_mounted              = false;
+    bool _is_sd_settings_loaded           = false;
     std::uint32_t _idle_sleep_timeout_ms  = DEFAULT_IDLE_SLEEP_TIMEOUT_MS;
     std::uint32_t _last_user_activity_ms  = 0;
     std::uint32_t _pending_sleep_timer_ms = 0;
@@ -208,6 +209,7 @@ private:
     void start_sntp();
     void stop_sntp();
     void setting_init();
+    void loadSettingsFromSdConfig();
     void spi_init();
     void sd_card_init();
     bool canEnterLightSleep() const;

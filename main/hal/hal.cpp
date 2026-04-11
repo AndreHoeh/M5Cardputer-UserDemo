@@ -9,15 +9,65 @@
 #include <mooncake_log.h>
 #include <M5Unified.hpp>
 #include <algorithm>
+#include <cctype>
+#include <cerrno>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <driver/gpio.h>
 #include <esp_mac.h>
 #include <esp_sleep.h>
+#include <limits>
 #include <memory>
 
 static std::unique_ptr<Hal> _hal_instance;
-static const std::string _tag                       = "HAL";
-static constexpr int32_t DEFAULT_DISPLAY_BRIGHTNESS = 255;
+static const std::string _tag                          = "HAL";
+static constexpr int32_t DEFAULT_DISPLAY_BRIGHTNESS    = 255;
+static constexpr char SETTINGS_CONFIG_PATH[]           = "/sdcard/settings.conf";
+static constexpr std::size_t SETTINGS_LINE_BUFFER_SIZE = 256;
+
+namespace {
+std::string trim_copy(const std::string& value)
+{
+    const auto begin =
+        std::find_if_not(value.begin(), value.end(), [](unsigned char ch) { return std::isspace(ch) != 0; });
+    if (begin == value.end()) {
+        return {};
+    }
+
+    const auto end =
+        std::find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) { return std::isspace(ch) != 0; }).base();
+    return std::string(begin, end);
+}
+
+void discard_line_remainder(FILE* file)
+{
+    int ch = 0;
+    while ((ch = fgetc(file)) != EOF && ch != '\n') {
+    }
+}
+
+bool parse_int32_value(const std::string& raw_value, int32_t& parsed_value)
+{
+    errno                 = 0;
+    char* end             = nullptr;
+    const long long value = std::strtoll(raw_value.c_str(), &end, 10);
+    if (end == raw_value.c_str() || errno != 0) {
+        return false;
+    }
+
+    if (!trim_copy(end).empty()) {
+        return false;
+    }
+
+    if (value < std::numeric_limits<int32_t>::min() || value > std::numeric_limits<int32_t>::max()) {
+        return false;
+    }
+
+    parsed_value = static_cast<int32_t>(value);
+    return true;
+}
+}  // namespace
 
 Hal& GetHAL()
 {
@@ -277,6 +327,118 @@ void Hal::setting_init()
     setSpeakerVolume(DEFAULT_SPEAKER_VOLUME);
     setDisplayBrightness(DEFAULT_DISPLAY_BRIGHTNESS);
     setIdleSleepTimeoutMs(DEFAULT_IDLE_SLEEP_TIMEOUT_MS);
+}
+
+void Hal::loadSettingsFromSdConfig()
+{
+    mclog::tagInfo(_tag, "load SD settings config");
+
+    if (!_is_sd_card_mounted) {
+        mclog::tagInfo(_tag, "skip SD settings config: SD card not mounted");
+        return;
+    }
+
+    if (_is_sd_settings_loaded) {
+        mclog::tagInfo(_tag, "skip SD settings config: already processed");
+        return;
+    }
+
+    _is_sd_settings_loaded = true;
+
+    FILE* config_file = fopen(SETTINGS_CONFIG_PATH, "r");
+    if (config_file == nullptr) {
+        mclog::tagInfo(_tag, "skip SD settings config: {} not found", SETTINGS_CONFIG_PATH);
+        return;
+    }
+
+    char line_buffer[SETTINGS_LINE_BUFFER_SIZE];
+    size_t line_number   = 0;
+    size_t applied_count = 0;
+
+    while (fgets(line_buffer, sizeof(line_buffer), config_file) != nullptr) {
+        ++line_number;
+
+        std::string line(line_buffer);
+        const bool line_too_long = line.find('\n') == std::string::npos && !feof(config_file);
+        if (line_too_long) {
+            discard_line_remainder(config_file);
+            mclog::tagWarn(_tag, "skip SD settings line {}: line too long", line_number);
+            continue;
+        }
+
+        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+
+        const auto comment_pos = line.find('#');
+        if (comment_pos != std::string::npos) {
+            line.erase(comment_pos);
+        }
+
+        line = trim_copy(line);
+        if (line.empty()) {
+            continue;
+        }
+
+        const auto separator_pos = line.find('=');
+        if (separator_pos == std::string::npos) {
+            mclog::tagWarn(_tag, "skip SD settings line {}: expected key=value", line_number);
+            continue;
+        }
+
+        const std::string key   = trim_copy(line.substr(0, separator_pos));
+        const std::string value = trim_copy(line.substr(separator_pos + 1));
+        if (key.empty() || value.empty()) {
+            mclog::tagWarn(_tag, "skip SD settings line {}: empty key or value", line_number);
+            continue;
+        }
+
+        if (key == "config_version") {
+            int32_t parsed_version = 0;
+            if (!parse_int32_value(value, parsed_version)) {
+                mclog::tagWarn(_tag, "skip SD settings line {}: invalid config_version '{}'", line_number, value);
+                continue;
+            }
+
+            if (parsed_version != 1) {
+                mclog::tagWarn(_tag, "unexpected SD settings config_version {} on line {}", parsed_version,
+                               line_number);
+            }
+            continue;
+        }
+
+        int32_t parsed_value = 0;
+        if (!parse_int32_value(value, parsed_value)) {
+            mclog::tagWarn(_tag, "skip SD settings line {}: invalid integer '{}' for key '{}'", line_number, value,
+                           key);
+            continue;
+        }
+
+        bool applied = false;
+        if (key == "speaker_volume") {
+            applied = setSpeakerVolume(parsed_value);
+        } else if (key == "display_brightness") {
+            applied = setDisplayBrightness(parsed_value);
+        } else if (key == "idle_sleep_timeout_ms") {
+            if (parsed_value < 0) {
+                mclog::tagWarn(_tag, "reject invalid idle sleep timeout on line {}: {}", line_number, parsed_value);
+                continue;
+            }
+            applied = setIdleSleepTimeoutMs(static_cast<std::uint32_t>(parsed_value));
+        } else {
+            mclog::tagWarn(_tag, "skip SD settings line {}: unknown key '{}'", line_number, key);
+            continue;
+        }
+
+        if (!applied) {
+            mclog::tagWarn(_tag, "failed to apply SD setting '{}' from line {}", key, line_number);
+            continue;
+        }
+
+        ++applied_count;
+        mclog::tagInfo(_tag, "applied SD setting {}={}", key, parsed_value);
+    }
+
+    fclose(config_file);
+    mclog::tagInfo(_tag, "finished SD settings config load, applied {} override(s)", applied_count);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -914,6 +1076,7 @@ void Hal::sd_card_init()
     sdmmc_card_print_info(stdout, _sd_card);
 
     _is_sd_card_mounted = true;
+    loadSettingsFromSdConfig();
 }
 
 Hal::SdCardProbeResult_t Hal::sdCardProbe()
