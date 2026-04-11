@@ -8,6 +8,7 @@
 #include <apps/utils/audio/audio.h>
 #include <mooncake_log.h>
 #include <M5Unified.hpp>
+#include <array>
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -66,6 +67,48 @@ bool parse_int32_value(const std::string& raw_value, int32_t& parsed_value)
 
     parsed_value = static_cast<int32_t>(value);
     return true;
+}
+
+bool apply_speaker_volume_config(Hal& hal, int32_t value, size_t)
+{
+    return hal.setSpeakerVolume(value);
+}
+
+bool apply_display_brightness_config(Hal& hal, int32_t value, size_t)
+{
+    return hal.setDisplayBrightness(value);
+}
+
+bool apply_idle_sleep_timeout_config(Hal& hal, int32_t value, size_t line_number)
+{
+    if (value < 0) {
+        mclog::tagWarn(_tag, "reject invalid idle sleep timeout on line {}: {}", line_number, value);
+        return false;
+    }
+
+    return hal.setIdleSleepTimeoutMs(static_cast<std::uint32_t>(value));
+}
+
+struct SettingsConfigHandlerEntry {
+    const char* key;
+    bool (*apply)(Hal& hal, int32_t value, size_t line_number);
+};
+
+constexpr std::array<SettingsConfigHandlerEntry, 3> SETTINGS_CONFIG_HANDLERS = {{
+    {"speaker_volume", &apply_speaker_volume_config},
+    {"display_brightness", &apply_display_brightness_config},
+    {"idle_sleep_timeout_ms", &apply_idle_sleep_timeout_config},
+}};
+
+const SettingsConfigHandlerEntry* find_settings_config_handler(const std::string& key)
+{
+    const auto it = std::find_if(SETTINGS_CONFIG_HANDLERS.begin(), SETTINGS_CONFIG_HANDLERS.end(),
+                                 [&key](const SettingsConfigHandlerEntry& entry) { return key == entry.key; });
+    if (it == SETTINGS_CONFIG_HANDLERS.end()) {
+        return nullptr;
+    }
+
+    return &(*it);
 }
 }  // namespace
 
@@ -412,21 +455,13 @@ void Hal::loadSettingsFromSdConfig()
             continue;
         }
 
-        bool applied = false;
-        if (key == "speaker_volume") {
-            applied = setSpeakerVolume(parsed_value);
-        } else if (key == "display_brightness") {
-            applied = setDisplayBrightness(parsed_value);
-        } else if (key == "idle_sleep_timeout_ms") {
-            if (parsed_value < 0) {
-                mclog::tagWarn(_tag, "reject invalid idle sleep timeout on line {}: {}", line_number, parsed_value);
-                continue;
-            }
-            applied = setIdleSleepTimeoutMs(static_cast<std::uint32_t>(parsed_value));
-        } else {
+        const SettingsConfigHandlerEntry* handler = find_settings_config_handler(key);
+        if (handler == nullptr) {
             mclog::tagWarn(_tag, "skip SD settings line {}: unknown key '{}'", line_number, key);
             continue;
         }
+
+        const bool applied = handler->apply(*this, parsed_value, line_number);
 
         if (!applied) {
             mclog::tagWarn(_tag, "failed to apply SD setting '{}' from line {}", key, line_number);
