@@ -14,7 +14,6 @@
 #include "app_chat/app_chat.h"
 #include "app_repl/app_repl.h"
 #include "app_set_wifi/app_set_wifi.h"
-#include "app_settings/app_settings.h"
 #include "app_clock/app_clock.h"
 #include "app_keyboard/app_keyboard.h"
 #include "app_imu/app_imu.h"

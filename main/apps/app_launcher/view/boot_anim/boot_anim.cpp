@@ -19,13 +19,9 @@ using namespace smooth_ui_toolkit;
 void start_arkanoid();
 
 namespace {
-constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
-constexpr int DEFAULT_DISPLAY_BRIGHTNESS        = 255;
-
 uint8_t get_startup_brightness()
 {
-    const int32_t stored = GetHAL().getSettings().GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS);
-    return static_cast<uint8_t>(std::clamp<int32_t>(stored, 0, 255));
+    return GetHAL().getDisplayBrightness();
 }
 }  // namespace
 

@@ -42,7 +42,7 @@ public:
     void reportUserActivity();
     void checkAndEnterSleepIfIdle();
     bool enterLightSleep(std::uint32_t timerWakeupMs = 0);
-    void setIdleSleepTimeoutMs(std::uint32_t timeoutMs, bool persist = true);
+    bool setIdleSleepTimeoutMs(std::uint32_t timeoutMs);
     std::uint32_t getIdleSleepTimeoutMs() const
     {
         return _idle_sleep_timeout_ms;
@@ -95,9 +95,15 @@ public:
     {
         return _speaker_volume;
     }
-    void setSpeakerVolume(uint8_t volume, bool persist = true);
+    bool setSpeakerVolume(int32_t volume);
     uint8_t getScaledSpeakerVolume(float scale) const;
     void applyScaledSpeakerVolume(float scale);
+
+    bool setDisplayBrightness(int32_t brightness);
+    uint8_t getDisplayBrightness() const
+    {
+        return _display_brightness;
+    }
 
     /* ---------------------------------- Input --------------------------------- */
     m5::Button_Class& homeButton = M5.BtnA;
@@ -174,11 +180,13 @@ public:
 
 private:
     static constexpr uint8_t DEFAULT_SPEAKER_VOLUME              = 30;
+    static constexpr uint8_t DEFAULT_DISPLAY_BRIGHTNESS          = 255;
     static constexpr std::uint32_t DEFAULT_IDLE_SLEEP_TIMEOUT_MS = 0;
     static constexpr std::uint32_t MAX_IDLE_SLEEP_TIMEOUT_MS     = 60U * 60U * 1000U;
 
     Settings* _settings                   = nullptr;
     uint8_t _speaker_volume               = DEFAULT_SPEAKER_VOLUME;
+    uint8_t _display_brightness           = DEFAULT_DISPLAY_BRIGHTNESS;
     bool _is_wifi_inited                  = false;
     bool _is_wifi_connected               = false;
     bool _is_esp_now_inited               = false;

@@ -16,11 +16,8 @@
 #include <memory>
 
 static std::unique_ptr<Hal> _hal_instance;
-static const std::string _tag                          = "HAL";
-static constexpr char SPEAKER_VOLUME_SETTING_KEY[]     = "speaker_volume";
-static constexpr char DISPLAY_BRIGHTNESS_SETTING_KEY[] = "disp_brightness";
-static constexpr char IDLE_SLEEP_TIMEOUT_SETTING_KEY[] = "sleep_idle_ms";
-static constexpr int32_t DEFAULT_DISPLAY_BRIGHTNESS    = 255;
+static const std::string _tag                       = "HAL";
+static constexpr int32_t DEFAULT_DISPLAY_BRIGHTNESS = 255;
 
 Hal& GetHAL()
 {
@@ -64,14 +61,16 @@ void Hal::feedTheDog()
     vTaskDelay(1);
 }
 
-void Hal::setSpeakerVolume(uint8_t volume, bool persist)
+bool Hal::setSpeakerVolume(int32_t volume)
 {
-    _speaker_volume = volume;
-    speaker.setVolume(_speaker_volume);
-
-    if (persist && _settings) {
-        _settings->SetInt(SPEAKER_VOLUME_SETTING_KEY, _speaker_volume);
+    if (volume < 0 || volume > 255) {
+        mclog::tagWarn(_tag, "reject invalid speaker volume: {}", volume);
+        return false;
     }
+
+    _speaker_volume = static_cast<uint8_t>(volume);
+    speaker.setVolume(_speaker_volume);
+    return true;
 }
 
 uint8_t Hal::getScaledSpeakerVolume(float scale) const
@@ -84,6 +83,18 @@ uint8_t Hal::getScaledSpeakerVolume(float scale) const
 void Hal::applyScaledSpeakerVolume(float scale)
 {
     speaker.setVolume(getScaledSpeakerVolume(scale));
+}
+
+bool Hal::setDisplayBrightness(int32_t brightness)
+{
+    if (brightness < 0 || brightness > 255) {
+        mclog::tagWarn(_tag, "reject invalid display brightness: {}", brightness);
+        return false;
+    }
+
+    _display_brightness = static_cast<uint8_t>(brightness);
+    display.setBrightness(_display_brightness);
+    return true;
 }
 
 std::vector<uint8_t> Hal::getDeviceMac()
@@ -104,15 +115,17 @@ void Hal::reportUserActivity()
     _last_user_activity_ms = millis();
 }
 
-void Hal::setIdleSleepTimeoutMs(std::uint32_t timeoutMs, bool persist)
+bool Hal::setIdleSleepTimeoutMs(std::uint32_t timeoutMs)
 {
-    _idle_sleep_timeout_ms = std::min(timeoutMs, MAX_IDLE_SLEEP_TIMEOUT_MS);
-
-    if (persist && _settings) {
-        _settings->SetInt(IDLE_SLEEP_TIMEOUT_SETTING_KEY, static_cast<int32_t>(_idle_sleep_timeout_ms));
+    if (timeoutMs > MAX_IDLE_SLEEP_TIMEOUT_MS) {
+        mclog::tagWarn(_tag, "reject invalid idle sleep timeout: {}", static_cast<unsigned long>(timeoutMs));
+        return false;
     }
 
+    _idle_sleep_timeout_ms = timeoutMs;
+
     reportUserActivity();
+    return true;
 }
 
 // TODO there is currently a bug that if the device initiated esp-now before, it will not disable it automatically and
@@ -174,10 +187,7 @@ bool Hal::enterLightSleep(std::uint32_t timerWakeupMs)
     }
 
     const std::uint32_t effective_timer_ms = (timerWakeupMs > 0) ? timerWakeupMs : _pending_sleep_timer_ms;
-    const int32_t restore_brightness =
-        _settings ? _settings->GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS)
-                  : DEFAULT_DISPLAY_BRIGHTNESS;
-    const gpio_num_t keyboard_wake_pin = static_cast<gpio_num_t>(HAL_PIN_KEYBOARD_INT);
+    const gpio_num_t keyboard_wake_pin     = static_cast<gpio_num_t>(HAL_PIN_KEYBOARD_INT);
 
     gpio_wakeup_disable(keyboard_wake_pin);
     ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
@@ -192,7 +202,7 @@ bool Hal::enterLightSleep(std::uint32_t timerWakeupMs)
     const esp_err_t ret = esp_light_sleep_start();
 
     gpio_wakeup_disable(keyboard_wake_pin);
-    display.setBrightness(static_cast<uint8_t>(std::clamp<int32_t>(restore_brightness, 0, 255)));
+    display.setBrightness(_display_brightness);
 
     if (ret != ESP_OK) {
         mclog::tagError(_tag, "light sleep failed: {}", esp_err_to_name(ret));
@@ -264,19 +274,9 @@ void Hal::setting_init()
 
     _settings = new Settings("cardputer", true);
 
-    const int32_t stored_volume  = _settings->GetInt(SPEAKER_VOLUME_SETTING_KEY, DEFAULT_SPEAKER_VOLUME);
-    const int32_t clamped_volume = std::clamp<int32_t>(stored_volume, 0, 255);
-    setSpeakerVolume(static_cast<uint8_t>(clamped_volume), false);
-
-    const int32_t stored_brightness  = _settings->GetInt(DISPLAY_BRIGHTNESS_SETTING_KEY, DEFAULT_DISPLAY_BRIGHTNESS);
-    const int32_t clamped_brightness = std::clamp<int32_t>(stored_brightness, 0, 255);
-    display.setBrightness(static_cast<uint8_t>(clamped_brightness));
-
-    const int32_t stored_idle_sleep_timeout =
-        _settings->GetInt(IDLE_SLEEP_TIMEOUT_SETTING_KEY, DEFAULT_IDLE_SLEEP_TIMEOUT_MS);
-    const int32_t clamped_idle_sleep_timeout =
-        std::clamp<int32_t>(stored_idle_sleep_timeout, 0, static_cast<int32_t>(MAX_IDLE_SLEEP_TIMEOUT_MS));
-    _idle_sleep_timeout_ms = static_cast<std::uint32_t>(clamped_idle_sleep_timeout);
+    setSpeakerVolume(DEFAULT_SPEAKER_VOLUME);
+    setDisplayBrightness(DEFAULT_DISPLAY_BRIGHTNESS);
+    setIdleSleepTimeoutMs(DEFAULT_IDLE_SLEEP_TIMEOUT_MS);
 }
 
 /* -------------------------------------------------------------------------- */
