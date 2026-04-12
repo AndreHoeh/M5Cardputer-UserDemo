@@ -54,7 +54,7 @@ void log_sd_root_entries(const std::string& logTag)
 AppConfig::AppConfig()
 {
     setAppInfo().name     = "Config";
-    setAppInfo().userData = new AppIcon_t(image_data_tf_big, image_data_tf_small);
+    setAppInfo().userData = new AppIcon_t(image_data_tf_big, image_data_tf_small, false);
 }
 
 AppConfig::~AppConfig()

@@ -33,6 +33,10 @@ void Launcher::update_system_bar()
 
 void Launcher::render_system_bar()
 {
+    if (!GetHAL().isSystemBarVisible()) {
+        return;
+    }
+
     // Update state
     _data.system_state.wifi_state = GetHAL().isWifiConnected() ? 1 : 4;
 

@@ -37,11 +37,28 @@ void Launcher::onRunning()
     if (_data.running_app_id >= 0) {
         // If running app is closed
         if (GetMooncake().getAppCurrentState(_data.running_app_id) == AppAbility::StateSleeping) {
+            GetHAL().setSystemBarVisible(true);
             _data.running_app_id = -1;
+            render_system_bar();
             render_keyboard_bar();
             ANIM_APP_CLOSE();
         }
     } else {
         update_menu();
     }
+}
+
+bool Launcher::app_shows_system_bar(int appId) const
+{
+    auto* runningApp = GetMooncake().getAppAbilityManager()->getAbilityInstance(appId);
+    if (runningApp == nullptr) {
+        return true;
+    }
+
+    auto* appIcon = static_cast<AppIcon_t*>(static_cast<AppAbility*>(runningApp)->getAppInfo().userData);
+    if (appIcon == nullptr) {
+        return true;
+    }
+
+    return appIcon->showSystemBar;
 }

@@ -75,9 +75,21 @@ public:
     LGFX_Sprite canvasSystemBar   = LGFX_Sprite(&M5.Display);
     LGFX_Sprite canvasKeyboardBar = LGFX_Sprite(&M5.Display);
 
+    void setSystemBarVisible(bool visible);
+    bool isSystemBarVisible() const
+    {
+        return _system_bar_visible;
+    }
+    int getCanvasTopOffset() const
+    {
+        return _system_bar_visible ? canvasSystemBar.height() : 0;
+    }
+
     inline void pushCanvasSystemBar()
     {
-        canvasSystemBar.pushSprite(canvasKeyboardBar.width(), 0);
+        if (_system_bar_visible && canvasSystemBar.width() > 0 && canvasSystemBar.height() > 0) {
+            canvasSystemBar.pushSprite(canvasKeyboardBar.width(), 0);
+        }
     }
     inline void pushCanvasKeyboardBar()
     {
@@ -85,7 +97,7 @@ public:
     }
     inline void pushCanvas()
     {
-        canvas.pushSprite(canvasKeyboardBar.width(), canvasSystemBar.height());
+        canvas.pushSprite(canvasKeyboardBar.width(), getCanvasTopOffset());
     }
 
     /* ---------------------------------- Audio --------------------------------- */
@@ -180,6 +192,7 @@ public:
     CapLoRa868 capLora868;
 
 private:
+    static constexpr int DISPLAY_CANVAS_WIDTH                    = 204;
     static constexpr uint8_t DEFAULT_SPEAKER_VOLUME              = 30;
     static constexpr uint8_t DEFAULT_DISPLAY_BRIGHTNESS          = 255;
     static constexpr std::uint32_t DEFAULT_IDLE_SLEEP_TIMEOUT_MS = 0;
@@ -200,11 +213,13 @@ private:
     std::uint32_t _last_user_activity_ms  = 0;
     std::uint32_t _pending_sleep_timer_ms = 0;
     SleepWakeReason _last_wake_reason     = SleepWakeReason::None;
+    bool _system_bar_visible              = true;
     int _ble_keyboard_event_slot_id       = -1;
     int _usb_keyboard_event_slot_id       = -1;
     std::unique_ptr<CapLoRa868> _cap_lora868;
 
     void display_init();
+    void recreate_display_sprites();
     void i2c_scan();
     void keyboard_init();
     void start_sntp();

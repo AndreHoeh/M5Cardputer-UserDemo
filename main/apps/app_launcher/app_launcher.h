@@ -74,6 +74,7 @@ private:
     void start_keyboard_bar();
     void render_keyboard_bar();
     void render_system_bar();
+    bool app_shows_system_bar(int appId) const;
     void handle_app_open(int index, int appId);
 
 public:

@@ -177,6 +177,8 @@ void Launcher::handle_app_open(int index, int appId)
     // mclog::tagInfo(_tag, "handle app open: index: {} appId: {} running app id: {}", index, appId,
     // _data.running_app_id);
 
+    GetHAL().setSystemBarVisible(app_shows_system_bar(appId));
+    render_keyboard_bar();
     GetMooncake().openApp(appId);
     _data.running_app_id = appId;
 

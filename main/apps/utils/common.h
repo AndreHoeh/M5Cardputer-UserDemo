@@ -25,14 +25,16 @@
 
 struct AppIcon_t {
 public:
-    AppIcon_t(const uint16_t* iconBig, const uint16_t* iconSmall)
+    AppIcon_t(const uint16_t* iconBig, const uint16_t* iconSmall, bool showSystemBar = true)
     {
-        this->iconBig   = iconBig;
-        this->iconSmall = iconSmall;
+        this->iconBig       = iconBig;
+        this->iconSmall     = iconSmall;
+        this->showSystemBar = showSystemBar;
     }
 
     const uint16_t* iconBig;
     const uint16_t* iconSmall;
+    bool showSystemBar = true;
 };
 
 inline bool is_app_exit_requested()

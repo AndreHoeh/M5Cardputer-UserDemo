@@ -225,9 +225,35 @@ void Hal::display_init()
 {
     mclog::tagInfo(_tag, "display init");
 
-    canvas.createSprite(204, 109);
+    recreate_display_sprites();
+}
+
+void Hal::setSystemBarVisible(bool visible)
+{
+    if (_system_bar_visible == visible) {
+        return;
+    }
+
+    _system_bar_visible = visible;
+    recreate_display_sprites();
+    display.clear();
+}
+
+void Hal::recreate_display_sprites()
+{
+    canvas.deleteSprite();
+    canvasSystemBar.deleteSprite();
+    canvasKeyboardBar.deleteSprite();
+
+    const int canvasWidth     = std::min<int>(DISPLAY_CANVAS_WIDTH, display.width());
+    const int appCanvasHeight = _system_bar_visible ? 109 : display.height();
+
+    canvas.createSprite(canvasWidth, appCanvasHeight);
     canvasKeyboardBar.createSprite(display.width() - canvas.width(), display.height());
-    canvasSystemBar.createSprite(canvas.width(), display.height() - canvas.height());
+
+    if (_system_bar_visible) {
+        canvasSystemBar.createSprite(canvas.width(), display.height() - canvas.height());
+    }
 }
 
 /* -------------------------------------------------------------------------- */
