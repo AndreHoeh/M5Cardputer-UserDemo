@@ -100,7 +100,6 @@ void start_arkanoid()
     _data = new ArkanoidData_t;
 
     GetHAL().canvasSystemBar.deleteSprite();
-    GetHAL().canvasKeyboardBar.deleteSprite();
     GetHAL().canvas.deleteSprite();
     GetHAL().canvas.createSprite(GetHAL().display.width(), GetHAL().display.height());
 

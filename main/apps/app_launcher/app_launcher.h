@@ -17,23 +17,6 @@
  */
 class Launcher : public mooncake::AppAbility {
 private:
-    struct KeyboardBarState_t {
-        bool caps_lock = false;
-        bool fn        = false;
-        bool ctrl      = false;
-        bool opt       = false;
-        bool alt       = false;
-
-        void reset()
-        {
-            caps_lock = false;
-            fn        = false;
-            ctrl      = false;
-            opt       = false;
-            alt       = false;
-        }
-    };
-
     struct SystemState_t {
         // 1 ~ 5
         uint8_t wifi_state = 5;
@@ -55,9 +38,6 @@ private:
         uint32_t bat_update_time_count    = 0;
         SystemState_t system_state;
 
-        // Keyboard bar
-        KeyboardBarState_t keybaord_state;
-
         char string_buffer[100];
 
         int running_app_id = -1;
@@ -71,8 +51,6 @@ private:
 
     void start_system_bar();
     void update_system_bar();
-    void start_keyboard_bar();
-    void render_keyboard_bar();
     void render_system_bar();
     bool app_shows_system_bar(int appId) const;
     void handle_app_open(int index, int appId);

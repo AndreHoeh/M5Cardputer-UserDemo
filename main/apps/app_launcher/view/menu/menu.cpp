@@ -178,7 +178,6 @@ void Launcher::handle_app_open(int index, int appId)
     // _data.running_app_id);
 
     GetHAL().setSystemBarVisible(app_shows_system_bar(appId));
-    render_keyboard_bar();
     GetMooncake().openApp(appId);
     _data.running_app_id = appId;
 

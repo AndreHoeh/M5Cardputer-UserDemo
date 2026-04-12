@@ -243,13 +243,11 @@ void Hal::recreate_display_sprites()
 {
     canvas.deleteSprite();
     canvasSystemBar.deleteSprite();
-    canvasKeyboardBar.deleteSprite();
 
-    const int canvasWidth     = std::min<int>(DISPLAY_CANVAS_WIDTH, display.width());
+    const int canvasWidth     = display.width();
     const int appCanvasHeight = _system_bar_visible ? 109 : display.height();
 
     canvas.createSprite(canvasWidth, appCanvasHeight);
-    canvasKeyboardBar.createSprite(display.width() - canvas.width(), display.height());
 
     if (_system_bar_visible) {
         canvasSystemBar.createSprite(canvas.width(), display.height() - canvas.height());

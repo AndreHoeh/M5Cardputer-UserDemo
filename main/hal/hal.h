@@ -70,10 +70,9 @@ public:
     }
 
     /* --------------------------------- Display -------------------------------- */
-    M5GFX& display                = M5.Display;
-    LGFX_Sprite canvas            = LGFX_Sprite(&M5.Display);
-    LGFX_Sprite canvasSystemBar   = LGFX_Sprite(&M5.Display);
-    LGFX_Sprite canvasKeyboardBar = LGFX_Sprite(&M5.Display);
+    M5GFX& display              = M5.Display;
+    LGFX_Sprite canvas          = LGFX_Sprite(&M5.Display);
+    LGFX_Sprite canvasSystemBar = LGFX_Sprite(&M5.Display);
 
     void setSystemBarVisible(bool visible);
     bool isSystemBarVisible() const
@@ -88,16 +87,12 @@ public:
     inline void pushCanvasSystemBar()
     {
         if (_system_bar_visible && canvasSystemBar.width() > 0 && canvasSystemBar.height() > 0) {
-            canvasSystemBar.pushSprite(canvasKeyboardBar.width(), 0);
+            canvasSystemBar.pushSprite(0, 0);
         }
-    }
-    inline void pushCanvasKeyboardBar()
-    {
-        canvasKeyboardBar.pushSprite(0, 0);
     }
     inline void pushCanvas()
     {
-        canvas.pushSprite(canvasKeyboardBar.width(), getCanvasTopOffset());
+        canvas.pushSprite(0, getCanvasTopOffset());
     }
 
     /* ---------------------------------- Audio --------------------------------- */
@@ -192,7 +187,6 @@ public:
     CapLoRa868 capLora868;
 
 private:
-    static constexpr int DISPLAY_CANVAS_WIDTH                    = 204;
     static constexpr uint8_t DEFAULT_SPEAKER_VOLUME              = 30;
     static constexpr uint8_t DEFAULT_DISPLAY_BRIGHTNESS          = 255;
     static constexpr std::uint32_t DEFAULT_IDLE_SLEEP_TIMEOUT_MS = 0;

@@ -22,7 +22,6 @@ void Launcher::onCreate()
     GetHAL().loadSettingsFromSdConfig();
     start_menu();
     start_system_bar();
-    start_keyboard_bar();
 
     open();
 }
@@ -40,7 +39,6 @@ void Launcher::onRunning()
             GetHAL().setSystemBarVisible(true);
             _data.running_app_id = -1;
             render_system_bar();
-            render_keyboard_bar();
             ANIM_APP_CLOSE();
         }
     } else {
