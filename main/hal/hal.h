@@ -10,6 +10,7 @@
 #include <M5Unified.hpp>
 #include <M5GFX.h>
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -129,9 +130,25 @@ public:
 
     /* ---------------------------------- WiFi ---------------------------------- */
     using ScanResult_t = std::pair<int, std::string>;
+    struct ProximityScanResult_t {
+        std::array<uint8_t, 6> mac{};
+        std::string macString;
+        int rssi                  = -127;
+        uint8_t channel           = 1;
+        std::uint32_t firstSeenMs = 0;
+        std::uint32_t lastSeenMs  = 0;
+        std::uint32_t hitCount    = 0;
+        bool isManagementFrame    = false;
+    };
+
     void wifiInit();
     void wifiDeinit();
     void wifiScan(std::vector<ScanResult_t>& scanResult);
+    bool wifiProximityScanStart();
+    void wifiProximityScanStop();
+    void wifiProximityScanPoll();
+    void wifiProximityScanGetDevices(std::vector<ProximityScanResult_t>& scanResult);
+    bool isWifiProximityScanActive() const;
     bool wifiConnect(const std::string& ssid, const std::string& password);
     bool isWifiConnected() const
     {

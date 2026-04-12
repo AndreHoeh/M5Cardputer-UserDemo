@@ -57,6 +57,8 @@ void AppChat::onClose()
 {
     mclog::tagInfo(getAppInfo().name, "on close");
 
+    GetHAL().espNowDeinit();
+
     // Clean up chat view
     if (_chat_view) {
         _chat_view.reset();

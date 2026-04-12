@@ -9,6 +9,7 @@
 #include "app_launcher/app_launcher.h"
 #include "app_stringir_toolkit/app_stringir_toolkit.h"
 #include "app_wifi_scan/app_wifi_scan.h"
+#include "app_wifi_proximity/app_wifi_proximity.h"
 #include "app_record/app_record.h"
 #include "app_remote/app_remote.h"
 #include "app_chat/app_chat.h"

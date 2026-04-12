@@ -133,7 +133,7 @@ void Launcher::render_system_bar()
     // Bat level
     GetHAL().canvasSystemBar.setFont(&fonts::Font0);
     GetHAL().canvasSystemBar.setTextColor((uint32_t)0x000000);
-    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.bat_level, GetHAL().canvasSystemBar.width() - 20,
+    GetHAL().canvasSystemBar.drawCenterString(_data.system_state.bat_level, GetHAL().canvasSystemBar.width() - 25,
                                               GetHAL().canvasSystemBar.height() / 2 - 3);
 
     // Push

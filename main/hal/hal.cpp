@@ -11,9 +11,11 @@
 #include <M5Unified.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <driver/gpio.h>
 #include <esp_mac.h>
 #include <esp_sleep.h>
+#include <esp_timer.h>
 #include <memory>
 
 static std::unique_ptr<Hal> _hal_instance;
@@ -362,6 +364,124 @@ void Hal::keyboard_init()
 #define DEFAULT_SCAN_LIST_SIZE 6
 static wifi_ap_record_t _ap_info[DEFAULT_SCAN_LIST_SIZE];
 
+namespace {
+constexpr uint8_t PROXIMITY_SCAN_FIRST_CHANNEL    = 1;
+constexpr uint8_t PROXIMITY_SCAN_LAST_CHANNEL     = 13;
+constexpr uint32_t PROXIMITY_SCAN_HOP_INTERVAL_MS = 225;
+constexpr uint32_t PROXIMITY_SCAN_STALE_MS        = 12000;
+
+#pragma pack(push, 1)
+struct WifiMacHeader {
+    uint16_t frameControl;
+    uint16_t duration;
+    uint8_t receiver[6];
+    uint8_t transmitter[6];
+    uint8_t bssid[6];
+    uint16_t sequenceControl;
+};
+#pragma pack(pop)
+
+wifi_promiscuous_filter_t s_proximity_filter = {
+    .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA,
+};
+
+bool s_proximity_scan_active     = false;
+uint8_t s_proximity_channel      = PROXIMITY_SCAN_FIRST_CHANNEL;
+uint32_t s_proximity_next_hop_ms = 0;
+std::vector<Hal::ProximityScanResult_t> s_proximity_results;
+
+uint32_t proximity_now_ms()
+{
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
+}
+
+std::string format_mac_string(const uint8_t mac[6])
+{
+    return fmt::format("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+bool should_track_client_frame(const WifiMacHeader& header, wifi_promiscuous_pkt_type_t type)
+{
+    const uint16_t frameControl = header.frameControl;
+    const uint8_t frameSubtype  = static_cast<uint8_t>((frameControl >> 4) & 0x0f);
+    const bool toDs             = (frameControl & 0x0100U) != 0;
+    const bool fromDs           = (frameControl & 0x0200U) != 0;
+
+    if (type == WIFI_PKT_MGMT) {
+        return frameSubtype == 0x00 || frameSubtype == 0x02 || frameSubtype == 0x04;
+    }
+
+    if (type == WIFI_PKT_DATA) {
+        return toDs && !fromDs;
+    }
+
+    return false;
+}
+
+void update_proximity_result(const wifi_promiscuous_pkt_t* packet, wifi_promiscuous_pkt_type_t type)
+{
+    if (!s_proximity_scan_active || packet == nullptr) {
+        return;
+    }
+
+    if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA) {
+        return;
+    }
+
+    if (packet->rx_ctrl.sig_len < sizeof(WifiMacHeader)) {
+        return;
+    }
+
+    const auto* header = reinterpret_cast<const WifiMacHeader*>(packet->payload);
+    if (header == nullptr) {
+        return;
+    }
+
+    if (!should_track_client_frame(*header, type)) {
+        return;
+    }
+
+    const uint8_t* transmitter = header->transmitter;
+    if (transmitter[0] == 0 && transmitter[1] == 0 && transmitter[2] == 0 && transmitter[3] == 0 &&
+        transmitter[4] == 0 && transmitter[5] == 0) {
+        return;
+    }
+
+    const auto now     = proximity_now_ms();
+    const auto channel = packet->rx_ctrl.channel == 0 ? s_proximity_channel : packet->rx_ctrl.channel;
+    const auto rssi    = static_cast<int>(packet->rx_ctrl.rssi);
+
+    auto existing = std::find_if(
+        s_proximity_results.begin(), s_proximity_results.end(),
+        [transmitter](const auto& item) { return std::memcmp(item.mac.data(), transmitter, item.mac.size()) == 0; });
+
+    if (existing != s_proximity_results.end()) {
+        existing->rssi       = rssi;
+        existing->channel    = channel;
+        existing->lastSeenMs = now;
+        existing->hitCount += 1;
+        existing->isManagementFrame = (type == WIFI_PKT_MGMT);
+        return;
+    }
+
+    Hal::ProximityScanResult_t result;
+    std::copy_n(transmitter, result.mac.size(), result.mac.begin());
+    result.macString         = format_mac_string(transmitter);
+    result.rssi              = rssi;
+    result.channel           = channel;
+    result.firstSeenMs       = now;
+    result.lastSeenMs        = now;
+    result.hitCount          = 1;
+    result.isManagementFrame = (type == WIFI_PKT_MGMT);
+    s_proximity_results.push_back(std::move(result));
+}
+
+void proximity_promiscuous_rx_cb(void* buf, wifi_promiscuous_pkt_type_t type)
+{
+    update_proximity_result(reinterpret_cast<const wifi_promiscuous_pkt_t*>(buf), type);
+}
+}  // namespace
+
 void Hal::wifiScan(std::vector<ScanResult_t>& scanResult)
 {
     mclog::tagInfo(_tag, "wifi scan");
@@ -412,6 +532,109 @@ void Hal::wifiScan(std::vector<ScanResult_t>& scanResult)
               });
 
     mclog::tagInfo(_tag, "wifi scan completed, found {} APs", scanResult.size());
+}
+
+bool Hal::wifiProximityScanStart()
+{
+    mclog::tagInfo(_tag, "wifi proximity scan start");
+
+    if (s_proximity_scan_active) {
+        return true;
+    }
+
+    if (!_is_wifi_inited) {
+        wifiInit();
+    }
+
+    if (_is_wifi_connected) {
+        wifiDisconnect();
+    }
+
+    if (_is_esp_now_inited) {
+        espNowDeinit();
+    }
+
+    esp_err_t ret = esp_wifi_stop();
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT && ret != ESP_ERR_WIFI_NOT_STARTED) {
+        mclog::tagError(_tag, "failed to stop wifi before proximity scan: {}", esp_err_to_name(ret));
+        return false;
+    }
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_channel(PROXIMITY_SCAN_FIRST_CHANNEL, WIFI_SECOND_CHAN_NONE));
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&s_proximity_filter));
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(&proximity_promiscuous_rx_cb));
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
+
+    s_proximity_results.clear();
+    s_proximity_channel     = PROXIMITY_SCAN_FIRST_CHANNEL;
+    s_proximity_next_hop_ms = millis() + PROXIMITY_SCAN_HOP_INTERVAL_MS;
+    s_proximity_scan_active = true;
+    return true;
+}
+
+void Hal::wifiProximityScanStop()
+{
+    mclog::tagInfo(_tag, "wifi proximity scan stop");
+
+    if (!s_proximity_scan_active) {
+        return;
+    }
+
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous(false));
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(nullptr));
+
+    esp_err_t ret = esp_wifi_stop();
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT && ret != ESP_ERR_WIFI_NOT_STARTED) {
+        mclog::tagError(_tag, "failed to stop wifi after proximity scan: {}", esp_err_to_name(ret));
+    }
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    s_proximity_scan_active = false;
+    s_proximity_channel     = PROXIMITY_SCAN_FIRST_CHANNEL;
+    s_proximity_next_hop_ms = 0;
+    s_proximity_results.clear();
+}
+
+void Hal::wifiProximityScanPoll()
+{
+    if (!s_proximity_scan_active) {
+        return;
+    }
+
+    const auto now = millis();
+    if (now >= s_proximity_next_hop_ms) {
+        s_proximity_channel++;
+        if (s_proximity_channel > PROXIMITY_SCAN_LAST_CHANNEL) {
+            s_proximity_channel = PROXIMITY_SCAN_FIRST_CHANNEL;
+        }
+        ESP_ERROR_CHECK(esp_wifi_set_channel(s_proximity_channel, WIFI_SECOND_CHAN_NONE));
+        s_proximity_next_hop_ms = now + PROXIMITY_SCAN_HOP_INTERVAL_MS;
+    }
+
+    const auto cutoff = proximity_now_ms() > PROXIMITY_SCAN_STALE_MS ? proximity_now_ms() - PROXIMITY_SCAN_STALE_MS : 0;
+    s_proximity_results.erase(std::remove_if(s_proximity_results.begin(), s_proximity_results.end(),
+                                             [cutoff](const auto& item) { return item.lastSeenMs < cutoff; }),
+                              s_proximity_results.end());
+}
+
+void Hal::wifiProximityScanGetDevices(std::vector<ProximityScanResult_t>& scanResult)
+{
+    scanResult = s_proximity_results;
+    std::sort(scanResult.begin(), scanResult.end(), [](const auto& left, const auto& right) {
+        if (left.rssi != right.rssi) {
+            return left.rssi > right.rssi;
+        }
+        return left.lastSeenMs > right.lastSeenMs;
+    });
+}
+
+bool Hal::isWifiProximityScanActive() const
+{
+    return s_proximity_scan_active;
 }
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
