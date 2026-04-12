@@ -12,6 +12,7 @@
 #include "app_record/app_record.h"
 #include "app_remote/app_remote.h"
 #include "app_chat/app_chat.h"
+#include "app_config/app_config.h"
 #include "app_repl/app_repl.h"
 #include "app_set_wifi/app_set_wifi.h"
 #include "app_clock/app_clock.h"

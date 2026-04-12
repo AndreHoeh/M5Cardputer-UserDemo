@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 
 namespace settings_config {
@@ -101,7 +102,7 @@ std::size_t loadFromFile(Hal& hal, const char* filePath, const std::string& logT
 {
     FILE* config_file = fopen(filePath, "r");
     if (config_file == nullptr) {
-        mclog::tagInfo(logTag, "skip SD settings config: {} not found", filePath);
+        mclog::tagInfo(logTag, "skip SD settings config: failed to open {}: {}", filePath, std::strerror(errno));
         return 0;
     }
 
