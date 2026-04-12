@@ -195,13 +195,17 @@ void AppConfig::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
         return;
     }
 
-    if (keyEvent.keyCode == KEY_LEFT || ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_H)) {
+    if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_COMMA) ||
+        ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_H)) {
         shouldRender = _editor->moveLeft();
-    } else if (keyEvent.keyCode == KEY_RIGHT || ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_L)) {
+    } else if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_SLASH) ||
+               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_L)) {
         shouldRender = _editor->moveRight();
-    } else if (keyEvent.keyCode == KEY_UP || ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_K)) {
+    } else if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_SEMICOLON) ||
+               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_K)) {
         shouldRender = _editor->moveUp();
-    } else if (keyEvent.keyCode == KEY_DOWN || ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_J)) {
+    } else if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_DOT) ||
+               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_J)) {
         shouldRender = _editor->moveDown();
     } else if (keyEvent.keyCode == KEY_BACKSPACE) {
         shouldRender = _editor->backspace();
