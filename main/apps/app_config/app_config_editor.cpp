@@ -34,7 +34,7 @@ bool AppConfigEditor::loadFromFile(const char* filePath, std::string& errorMessa
         const std::size_t bytesRead = fread(chunk, 1, sizeof(chunk), file);
         if (bytesRead > 0) {
             if (buffer.size() + bytesRead > MAX_FILE_SIZE) {
-                errorMessage = "settings.conf is too large";
+                errorMessage = "file exceeds 4096 bytes";
                 fclose(file);
                 return false;
             }
@@ -101,7 +101,7 @@ bool AppConfigEditor::saveToFile(const char* filePath, std::string& errorMessage
     }
 
     _dirty          = false;
-    _status_message = "Saved to /sdcard/settings.conf";
+    _status_message = "Saved";
     return true;
 }
 
@@ -137,7 +137,7 @@ bool AppConfigEditor::insertText(const std::string& text)
     }
 
     if (_buffer.size() + text.size() > MAX_FILE_SIZE) {
-        _status_message = "settings.conf max size reached";
+        _status_message = "File max size reached";
         return false;
     }
 

@@ -13,9 +13,8 @@
 #include <sdmmc_cmd.h>
 
 namespace {
-constexpr char kHalTag[]      = "HAL";
-constexpr char kMountPoint[]  = "/sdcard";
-constexpr char kSdProbePath[] = "/sdcard/test.txt";
+constexpr char kHalTag[]     = "HAL";
+constexpr char kMountPoint[] = "/sdcard";
 
 bool s_spi_bus_initialized = false;
 sdmmc_card_t* s_sd_card    = nullptr;
@@ -107,19 +106,10 @@ Hal::SdCardProbeResult_t Hal::sdCardProbe()
     }
 
     result.is_mounted = true;
-
-    FILE* fp = fopen(kSdProbePath, "w");
-    if (fp) {
-        fwrite("Hello, World!", 1, 13, fp);
-        fclose(fp);
-
-        result.size = fmt::format(
-            "Size: {:.1f} GB",
-            (static_cast<float>(static_cast<uint64_t>(s_sd_card->csd.capacity) * s_sd_card->csd.sector_size)) /
-                (1024 * 1024 * 1024));
-    } else {
-        result.size = "Write Failed";
-    }
+    result.size =
+        fmt::format("Size: {:.1f} GB",
+                    (static_cast<float>(static_cast<uint64_t>(s_sd_card->csd.capacity) * s_sd_card->csd.sector_size)) /
+                        (1024 * 1024 * 1024));
 
     result.type = "Type: ";
     if (s_sd_card->is_sdio) {

@@ -10,10 +10,9 @@
 #include <apps/utils/common.h>
 #include <apps/utils/theme.h>
 #include <assets.h>
-#include <dirent.h>
 #include <hal.h>
 #include <mooncake_log.h>
-#include <cerrno>
+#include <algorithm>
 #include <cstring>
 #include <string>
 
@@ -33,27 +32,16 @@ std::string truncate_status_text(const std::string& value, std::size_t maxLength
     return value.substr(0, maxLength - 3) + "...";
 }
 
-void log_sd_root_entries(const std::string& logTag)
+bool has_text_input_modifiers(uint8_t modifierMask)
 {
-    DIR* directory = opendir("/sdcard");
-    if (directory == nullptr) {
-        mclog::tagWarn(logTag, "failed to open /sdcard for listing: {}", std::strerror(errno));
-        return;
-    }
-
-    mclog::tagInfo(logTag, "listing /sdcard root entries");
-    dirent* entry = nullptr;
-    while ((entry = readdir(directory)) != nullptr) {
-        mclog::tagInfo(logTag, "- {}", entry->d_name);
-    }
-
-    closedir(directory);
+    return (modifierMask &
+            (KEY_MOD_LCTRL | KEY_MOD_RCTRL | KEY_MOD_LMETA | KEY_MOD_RMETA | KEY_MOD_LALT | KEY_MOD_RALT)) != 0;
 }
 }  // namespace
 
 AppConfig::AppConfig()
 {
-    setAppInfo().name     = "Config";
+    setAppInfo().name     = "Editor";
     setAppInfo().userData = new AppIcon_t(image_data_tf_big, image_data_tf_small, false);
 }
 
@@ -67,17 +55,21 @@ void AppConfig::onOpen()
     mclog::tagInfo(getAppInfo().name, "on open");
 
     _editor            = std::make_unique<AppConfigEditor>();
+    _browser           = std::make_unique<AppConfigFileBrowser>();
     _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
         [this](const Keyboard::KeyEvent_t& keyEvent) { handle_key_event(keyEvent); });
     _cursor_visible     = true;
     _cursor_update_time = GetHAL().millis();
+    _state              = ViewState::Browser;
+    _active_file_path.clear();
+    _create_file_name.clear();
 
     GetHAL().canvas.setBaseColor(THEME_COLOR_BG);
     GetHAL().canvas.setTextSize(1);
     GetHAL().canvas.setTextScroll(false);
 
     update_viewport_metrics();
-    load_editor_content();
+    refresh_file_browser();
     render();
 }
 
@@ -101,27 +93,134 @@ void AppConfig::onClose()
     }
 
     _editor.reset();
+    _browser.reset();
 }
 
-void AppConfig::load_editor_content()
+void AppConfig::load_editor_content(const std::string& filePath)
 {
     std::string errorMessage;
+    if (_editor->loadFromFile(filePath.c_str(), errorMessage)) {
+        _active_file_path   = filePath;
+        _state              = ViewState::Editor;
+        _cursor_visible     = true;
+        _cursor_update_time = GetHAL().millis();
+        mclog::tagInfo(getAppInfo().name, "loaded {}", filePath);
+        return;
+    }
+
+    _browser->setStatusMessage(fmt::format("Open failed: {}", errorMessage));
+    mclog::tagWarn(getAppInfo().name, "failed to load {}: {}", filePath, errorMessage);
+}
+
+void AppConfig::refresh_file_browser()
+{
+    if (!_browser) {
+        return;
+    }
+
     const auto probeResult = GetHAL().sdCardProbe();
     if (!probeResult.is_mounted) {
-        _editor->showReadOnlyMessage(
-            "/sdcard is not mounted.\n\nInsert an SD card with settings.conf to edit device settings.");
-        mclog::tagWarn(getAppInfo().name, "skip config editor load: SD card not mounted");
+        _browser->clear();
+        _browser->setStatusMessage("Insert SD card  N disabled");
         return;
     }
 
-    if (_editor->loadFromFile(SETTINGS_CONFIG_PATH, errorMessage)) {
-        mclog::tagInfo(getAppInfo().name, "loaded {}", SETTINGS_CONFIG_PATH);
+    std::string errorMessage;
+    if (!_browser->refresh(errorMessage)) {
+        _browser->clear();
+        _browser->setStatusMessage(fmt::format("Browse failed: {}", errorMessage));
+        mclog::tagWarn(getAppInfo().name, "failed to refresh {}: {}", AppConfigFileBrowser::ROOT_PATH, errorMessage);
+    }
+}
+
+void AppConfig::open_selected_file()
+{
+    if (_browser == nullptr || !_browser->hasSelection()) {
         return;
     }
 
-    log_sd_root_entries(getAppInfo().name);
-    _editor->showReadOnlyMessage(fmt::format("{}\n\nOpen failed: {}", SETTINGS_CONFIG_PATH, errorMessage));
-    mclog::tagWarn(getAppInfo().name, "failed to load {}: {}", SETTINGS_CONFIG_PATH, errorMessage);
+    const auto* entry = _browser->getSelectedEntry();
+    if (entry == nullptr) {
+        return;
+    }
+
+    load_editor_content(entry->path);
+}
+
+void AppConfig::delete_selected_file()
+{
+    if (_browser == nullptr) {
+        return;
+    }
+
+    std::string deletedPath;
+    std::string errorMessage;
+    if (_browser->deleteSelectedFile(deletedPath, errorMessage)) {
+        mclog::tagInfo(getAppInfo().name, "deleted {}", deletedPath);
+        return;
+    }
+
+    _browser->setStatusMessage(fmt::format("Delete failed: {}", errorMessage));
+    if (!deletedPath.empty()) {
+        mclog::tagWarn(getAppInfo().name, "failed to delete {}: {}", deletedPath, errorMessage);
+    }
+}
+
+void AppConfig::abort_editor()
+{
+    const std::string abortedPath = _active_file_path;
+
+    _editor = std::make_unique<AppConfigEditor>();
+    _active_file_path.clear();
+    _state              = ViewState::Browser;
+    _cursor_visible     = true;
+    _cursor_update_time = GetHAL().millis();
+    update_viewport_metrics();
+
+    if (_browser != nullptr) {
+        _browser->setStatusMessage(abortedPath.empty() ? "Edit aborted" : fmt::format("Aborted {}", abortedPath));
+    }
+
+    mclog::tagInfo(getAppInfo().name, "aborted edit for {}", abortedPath.empty() ? "(no file)" : abortedPath);
+}
+
+void AppConfig::begin_create_file()
+{
+    const auto probeResult = GetHAL().sdCardProbe();
+    if (!probeResult.is_mounted) {
+        _browser->setStatusMessage("Insert SD card before creating files");
+        return;
+    }
+
+    _create_file_name.clear();
+    _state = ViewState::CreateFile;
+}
+
+void AppConfig::cancel_create_file()
+{
+    _create_file_name.clear();
+    _state = ViewState::Browser;
+    if (_browser) {
+        _browser->setStatusMessage("N New  Enter Open  D Delete");
+    }
+}
+
+void AppConfig::commit_create_file()
+{
+    if (_browser == nullptr) {
+        return;
+    }
+
+    std::string createdPath;
+    std::string errorMessage;
+    if (!_browser->createFile(_create_file_name, createdPath, errorMessage)) {
+        _browser->setStatusMessage(fmt::format("Create failed: {}", errorMessage));
+        return;
+    }
+
+    mclog::tagInfo(getAppInfo().name, "created {}", createdPath);
+    _create_file_name.clear();
+    _state = ViewState::Browser;
 }
 
 void AppConfig::update_viewport_metrics()
@@ -133,28 +232,78 @@ void AppConfig::update_viewport_metrics()
     if (_editor) {
         _editor->setViewportSize(viewportRows, viewportColumns);
     }
+
+    if (_browser) {
+        _browser->setViewportRows(viewportRows);
+    }
 }
 
 void AppConfig::render()
 {
     GetHAL().canvas.fillScreen(THEME_COLOR_BG);
     render_status_bar();
-    render_document();
-    render_cursor();
+    if (_state == ViewState::Editor) {
+        render_document();
+        render_cursor();
+    } else {
+        render_browser();
+    }
     GetHAL().pushCanvas();
 }
 
 void AppConfig::render_status_bar()
 {
-    const std::string header = fmt::format("{}{} {}", _editor->isEditable() ? "EDIT" : "READ",
-                                           _editor->isDirty() ? "*" : " ", SETTINGS_CONFIG_PATH);
-    const std::string status = truncate_status_text(_editor->getStatusMessage(), 36);
+    std::string header;
+    std::string status;
+
+    if (_state == ViewState::Editor) {
+        header = fmt::format("{}{} {}", _editor->isEditable() ? "EDIT" : "READ", _editor->isDirty() ? "*" : " ",
+                             _active_file_path.empty() ? "(no file)" : _active_file_path);
+        status = _editor->getStatusMessage();
+    } else if (_state == ViewState::CreateFile) {
+        header = "BROWSE /sdcard";
+        status = fmt::format("NEW: {}_  Enter Create  Esc Cancel", _create_file_name);
+    } else {
+        header = fmt::format("BROWSE {}", AppConfigFileBrowser::ROOT_PATH);
+        status = _browser ? _browser->getStatusMessage() : std::string();
+    }
 
     GetHAL().canvas.setFont(FONT_SMALL);
     GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
     GetHAL().canvas.drawString(truncate_status_text(header, 36).c_str(), 0, 0);
     GetHAL().canvas.setTextColor(TFT_CYAN, THEME_COLOR_BG);
-    GetHAL().canvas.drawString(status.c_str(), 0, 9);
+    GetHAL().canvas.drawString(truncate_status_text(status, 36).c_str(), 0, 9);
+}
+
+void AppConfig::render_browser()
+{
+    GetHAL().canvas.setFont(FONT_REPL);
+
+    if (_browser == nullptr || _browser->getEntryCount() == 0) {
+        GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        GetHAL().canvas.drawString("(no files)", 0, STATUS_BAR_HEIGHT);
+        return;
+    }
+
+    const std::size_t firstIndex = _browser->getFirstVisibleIndex();
+    for (std::size_t row = 0; row < _browser->getViewportRows(); ++row) {
+        const std::size_t entryIndex = firstIndex + row;
+        const auto* entry            = _browser->getEntry(entryIndex);
+        if (entry == nullptr) {
+            break;
+        }
+
+        const bool isSelected = entryIndex == _browser->getSelectedIndex();
+        const int y           = STATUS_BAR_HEIGHT + static_cast<int>(row * FONT_REPL_HEIGHT);
+        if (isSelected) {
+            GetHAL().canvas.fillRect(0, y, GetHAL().canvas.width(), FONT_REPL_HEIGHT, TFT_DARKGREEN);
+            GetHAL().canvas.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+        } else {
+            GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        }
+
+        GetHAL().canvas.drawString(truncate_status_text(entry->name, _editor->getViewportColumns()).c_str(), 0, y);
+    }
 }
 
 void AppConfig::render_document()
@@ -188,24 +337,94 @@ void AppConfig::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
     }
 
     const uint8_t modifierMask = GetHAL().keyboard.getModifierMask();
-    bool shouldRender          = false;
+    if (_state == ViewState::Editor) {
+        handle_editor_key_event(keyEvent, modifierMask);
+    } else if (_state == ViewState::CreateFile) {
+        handle_create_file_key_event(keyEvent, modifierMask);
+    } else {
+        handle_browser_key_event(keyEvent, modifierMask);
+    }
+}
+
+void AppConfig::handle_browser_key_event(const Keyboard::KeyEvent_t& keyEvent, uint8_t modifierMask)
+{
+    bool shouldRender = false;
+
+    if (keyEvent.keyCode == KEY_SEMICOLON || keyEvent.keyCode == KEY_UP) {
+        shouldRender = _browser->moveUp();
+    } else if (keyEvent.keyCode == KEY_DOT || keyEvent.keyCode == KEY_DOWN) {
+        shouldRender = _browser->moveDown();
+    } else if (keyEvent.keyCode == KEY_ENTER) {
+        open_selected_file();
+        shouldRender = true;
+    } else if (keyEvent.keyCode == KEY_N && !has_text_input_modifiers(modifierMask)) {
+        begin_create_file();
+        shouldRender = true;
+    } else if (keyEvent.keyCode == KEY_D && !has_text_input_modifiers(modifierMask)) {
+        delete_selected_file();
+        shouldRender = true;
+    }
+
+    if (shouldRender) {
+        render();
+    }
+}
+
+void AppConfig::handle_create_file_key_event(const Keyboard::KeyEvent_t& keyEvent, uint8_t modifierMask)
+{
+    bool shouldRender = false;
+
+    if (keyEvent.keyCode == KEY_ENTER) {
+        commit_create_file();
+        shouldRender = true;
+    } else if (keyEvent.keyCode == KEY_ESC) {
+        cancel_create_file();
+        shouldRender = true;
+    } else if (keyEvent.keyCode == KEY_BACKSPACE) {
+        if (!_create_file_name.empty()) {
+            _create_file_name.pop_back();
+            shouldRender = true;
+        }
+    } else if (keyEvent.keyCode == KEY_SPACE && !has_text_input_modifiers(modifierMask)) {
+        _create_file_name.push_back(' ');
+        shouldRender = true;
+    } else if (keyEvent.keyName != nullptr && strlen(keyEvent.keyName) == 1 &&
+               !has_text_input_modifiers(modifierMask)) {
+        _create_file_name.push_back(keyEvent.keyName[0]);
+        shouldRender = true;
+    }
+
+    if (shouldRender) {
+        render();
+    }
+}
+
+void AppConfig::handle_editor_key_event(const Keyboard::KeyEvent_t& keyEvent, uint8_t modifierMask)
+{
+    bool shouldRender = false;
 
     if ((modifierMask & KEY_MOD_LMETA) != 0 && keyEvent.keyCode == KEY_S) {
         save_file();
         return;
     }
 
+    if ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_GRAVE) {
+        abort_editor();
+        render();
+        return;
+    }
+
     if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_COMMA) ||
-        ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_H)) {
+        ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_H) || keyEvent.keyCode == KEY_LEFT) {
         shouldRender = _editor->moveLeft();
     } else if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_SLASH) ||
-               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_L)) {
+               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_L) || keyEvent.keyCode == KEY_RIGHT) {
         shouldRender = _editor->moveRight();
     } else if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_SEMICOLON) ||
-               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_K)) {
+               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_K) || keyEvent.keyCode == KEY_UP) {
         shouldRender = _editor->moveUp();
     } else if (((modifierMask & KEY_MOD_LSHIFT) != 0 && keyEvent.keyCode == KEY_DOT) ||
-               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_J)) {
+               ((modifierMask & KEY_MOD_LCTRL) != 0 && keyEvent.keyCode == KEY_J) || keyEvent.keyCode == KEY_DOWN) {
         shouldRender = _editor->moveDown();
     } else if (keyEvent.keyCode == KEY_BACKSPACE) {
         shouldRender = _editor->backspace();
@@ -215,7 +434,8 @@ void AppConfig::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
         shouldRender = _editor->insertText("    ");
     } else if (keyEvent.keyCode == KEY_SPACE) {
         shouldRender = _editor->insertChar(' ');
-    } else if (keyEvent.keyName != nullptr && strlen(keyEvent.keyName) == 1 && modifierMask == 0) {
+    } else if (keyEvent.keyName != nullptr && strlen(keyEvent.keyName) == 1 &&
+               !has_text_input_modifiers(modifierMask)) {
         shouldRender = _editor->insertChar(keyEvent.keyName[0]);
     }
 
@@ -228,7 +448,7 @@ void AppConfig::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
 
 void AppConfig::update_cursor()
 {
-    if (!_editor || !_editor->isEditable()) {
+    if (!_editor || _state != ViewState::Editor || !_editor->isEditable()) {
         return;
     }
 
@@ -241,12 +461,16 @@ void AppConfig::update_cursor()
 
 void AppConfig::save_file()
 {
+    if (_active_file_path.empty()) {
+        return;
+    }
+
     std::string errorMessage;
-    if (_editor->saveToFile(SETTINGS_CONFIG_PATH, errorMessage)) {
-        mclog::tagInfo(getAppInfo().name, "saved {}", SETTINGS_CONFIG_PATH);
+    if (_editor->saveToFile(_active_file_path.c_str(), errorMessage)) {
+        mclog::tagInfo(getAppInfo().name, "saved {}", _active_file_path);
     } else {
         _editor->setStatusMessage(fmt::format("Save failed: {}", errorMessage));
-        mclog::tagWarn(getAppInfo().name, "failed to save {}: {}", SETTINGS_CONFIG_PATH, errorMessage);
+        mclog::tagWarn(getAppInfo().name, "failed to save {}: {}", _active_file_path, errorMessage);
     }
 
     _cursor_visible     = true;
