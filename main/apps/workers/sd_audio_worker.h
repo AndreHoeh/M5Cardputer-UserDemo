@@ -36,6 +36,7 @@ public:
 private:
     std::string _sd_path;
     float _relative_volume;
+    uint8_t _volume_before;
     int _channel;
     uint8_t* _wav_buf = nullptr;
     size_t _wav_size  = 0;

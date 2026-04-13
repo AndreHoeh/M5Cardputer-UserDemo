@@ -9,7 +9,10 @@ static const char* _tag = "SdAudioWorker";
 namespace workers {
 
 SdAudioWorker::SdAudioWorker(std::string sdPath, float relative_volume, int channel)
-    : _sd_path(std::move(sdPath)), _relative_volume(relative_volume), _channel(channel)
+    : _sd_path(std::move(sdPath)),
+      _relative_volume(relative_volume),
+      _volume_before(GetHAL().getSpeakerVolume()),
+      _channel(channel)
 {
 }
 
@@ -54,6 +57,7 @@ void SdAudioWorker::onDestroy()
         free(_wav_buf);
         _wav_buf = nullptr;
     }
+    GetHAL().setSpeakerVolume(_volume_before);
 }
 
 }  // namespace workers
