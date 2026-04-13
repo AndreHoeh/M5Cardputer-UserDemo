@@ -29,6 +29,8 @@ public:
     bool moveRight();
     bool moveUp();
     bool moveDown();
+    bool moveLineStart();
+    bool moveLineEnd();
 
     bool isEditable() const
     {

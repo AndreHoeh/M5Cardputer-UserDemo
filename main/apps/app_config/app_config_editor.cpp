@@ -10,7 +10,7 @@
 #include <cstring>
 
 namespace {
-constexpr const char* STATUS_CONTROLS = "Ctrl+HJKL Move  Opt+S Save";
+constexpr const char* STATUS_CONTROLS = "Ctrl+HJKL Move  Opt+B/E Line  Opt+S Save";
 }
 
 AppConfigEditor::AppConfigEditor()
@@ -214,6 +214,32 @@ bool AppConfigEditor::moveDown()
     }
 
     _cursor_index = getIndexForLineColumn(lineIndex + 1, _preferred_column);
+    ensureCursorVisible();
+    return true;
+}
+
+bool AppConfigEditor::moveLineStart()
+{
+    const std::size_t lineStart = getLineStart(getCursorLine());
+    if (_cursor_index == lineStart) {
+        return false;
+    }
+
+    _cursor_index = lineStart;
+    syncPreferredColumn();
+    ensureCursorVisible();
+    return true;
+}
+
+bool AppConfigEditor::moveLineEnd()
+{
+    const std::size_t lineEnd = getLineEnd(getCursorLine());
+    if (_cursor_index == lineEnd) {
+        return false;
+    }
+
+    _cursor_index = lineEnd;
+    syncPreferredColumn();
     ensureCursorVisible();
     return true;
 }

@@ -135,6 +135,15 @@ void Keyboard::update_modifier_mask(const KeyEventRaw_t& key)
         }
     }
 
+    // Check left alt key (3, 2)
+    if (key.row == 3 && key.col == 2) {
+        if (key.state) {
+            _modifier_mask |= KEY_MOD_LALT;
+        } else {
+            _modifier_mask &= ~KEY_MOD_LALT;
+        }
+    }
+
     // Check capslock key (2, 1)
     if (key.row == 2 && key.col == 1) {
         _capslock_state = key.state;
