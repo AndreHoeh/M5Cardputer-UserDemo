@@ -71,6 +71,6 @@ direct_dependencies:
 - espressif/esp_tinyusb
 - idf
 - jgromes/radiolib
-manifest_hash: 11dfa23746cd56272c7e2231f3316fed15687713e403eee1876bad6e4bb0f037
+manifest_hash: 05248d4225ee493c5ea82961a3eec365151fc6ca630d37cd5349644caf2fc55e
 target: esp32s3
 version: 2.0.0

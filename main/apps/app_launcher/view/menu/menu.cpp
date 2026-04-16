@@ -22,20 +22,18 @@ void LauncherMenu::init(int launcherAppId)
     mclog::tagInfo(_tag, "init");
 
     // Add apps as option
-    int i               = 0;
-    auto installed_apps = GetMooncake().getAppAbilityManager()->getAllAbilityInstance();
-    for (auto& app_raw : installed_apps) {
-        auto app = static_cast<AppAbility*>(app_raw);
-
+    int i          = 0;
+    auto app_props = GetMooncake().getAllAppProps();
+    for (const auto& app : app_props) {
         // Skip launcher
-        if (app->getId() == launcherAppId) {
+        if (app.appID == launcherAppId) {
             continue;
         }
 
-        mclog::tagInfo(_tag, "add app: name: {} id: {}", app->getAppInfo().name, app->getId());
-        _option_infos.push_back({app->getId(), app->getAppInfo().name});
+        mclog::tagInfo(_tag, "add app: name: {} id: {}", app.info.name, app.appID);
+        _option_infos.push_back(OptionInfo_t{app.appID, app.info.name});
         addOption({Vector4i{ICON_GAP + i * (ICON_WIDTH + ICON_GAP), ICON_MARGIN_TOP, ICON_WIDTH, ICON_WIDTH},
-                   app->getAppInfo().userData});
+                   app.info.userData});
 
         i++;
     }
@@ -162,7 +160,7 @@ static LauncherMenu* _launcher_menu = nullptr;
 void Launcher::start_menu()
 {
     _launcher_menu = new LauncherMenu();
-    _launcher_menu->init(getId());
+    _launcher_menu->init(getID());
     _launcher_menu->onAppOpen = [this](int index, int appId) { handle_app_open(index, appId); };
 }
 
