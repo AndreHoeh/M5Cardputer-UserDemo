@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: MIT
  */
-#include <smooth_ui_toolkit.h>
+#include <smooth_ui_toolkit.hpp>
 #include <M5Unified.hpp>
 #include <mooncake_log.h>
 #include <mooncake.h>

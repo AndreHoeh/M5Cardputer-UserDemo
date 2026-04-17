@@ -69,7 +69,7 @@ void KeyboardSelectorMenu::onReadInput()
         }
         // Enter
         else if (event.row == 2 && event.col == 13) {
-            auto pressed_keyframe = shape::scale<float>(getSelectorCurrentFrame(), anchor_center, {1.3, 0.6});
+            auto pressed_keyframe = shape::scale<float>(getSelectorCurrentFrame(), shape::Anchor::Center, {1.3, 0.6});
             press(pressed_keyframe);
         }
     }

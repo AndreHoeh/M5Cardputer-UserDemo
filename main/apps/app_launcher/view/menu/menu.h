@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #pragma once
-#include <smooth_ui_toolkit.h>
+#include <smooth_ui_toolkit.hpp>
 #include <apps/utils/common.h>
 #include <functional>
 

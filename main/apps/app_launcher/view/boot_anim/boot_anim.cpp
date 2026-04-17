@@ -8,7 +8,7 @@
 #include "assets/logo.h"
 #include <apps/utils/common.h>
 #include <apps/utils/audio/audio.h>
-#include <smooth_ui_toolkit.h>
+#include <smooth_ui_toolkit.hpp>
 #include <mooncake_log.h>
 #include <hal.h>
 #include <apps/workers/sd_audio_worker.h>

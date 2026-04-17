@@ -9,7 +9,7 @@
 #include <hal/hal.h>
 #include <string>
 #include <vector>
-#include <smooth_ui_toolkit.h>
+#include <smooth_ui_toolkit.hpp>
 
 /**
  * @brief
