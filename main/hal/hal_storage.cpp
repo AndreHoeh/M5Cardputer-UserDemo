@@ -5,6 +5,7 @@
  */
 #include "hal.h"
 #include "hal_config.h"
+#include <driver/gpio.h>
 #include <mooncake_log.h>
 #include <driver/sdmmc_host.h>
 #include <driver/sdspi_host.h>
@@ -18,6 +19,30 @@ constexpr char kMountPoint[] = "/sdcard";
 
 bool s_spi_bus_initialized = false;
 sdmmc_card_t* s_sd_card    = nullptr;
+
+void configure_output_idle(gpio_num_t pin, uint32_t level)
+{
+    gpio_config_t config = {};
+    config.pin_bit_mask  = 1ULL << pin;
+    config.mode          = GPIO_MODE_OUTPUT;
+    config.pull_up_en    = GPIO_PULLUP_DISABLE;
+    config.pull_down_en  = GPIO_PULLDOWN_DISABLE;
+    config.intr_type     = GPIO_INTR_DISABLE;
+    gpio_config(&config);
+    gpio_set_level(pin, level);
+}
+
+void prepare_shared_spi_bus_for_sd_mount()
+{
+    // SD card startup is special: before it has been switched into SPI mode,
+    // it is more sensitive to what happens on the bus, and Espressif explicitly
+    // requires all other SPI devices to be held inactive during that phase.
+    // Keep companion SPI devices inactive (signal high) while the SD card enters SPI mode.
+    configure_output_idle(HAL_PIN_SD_CARD_CS, 1);
+    configure_output_idle(static_cast<gpio_num_t>(HAL_PIN_LORA_NSS_GPIO), 1);
+    configure_output_idle(static_cast<gpio_num_t>(HAL_PIN_LORA_RST_GPIO), 1);
+    mclog::tagInfo(kHalTag, "prepared shared SPI bus for SD mount");
+}
 }  // namespace
 
 void Hal::spi_init()
@@ -61,6 +86,8 @@ void Hal::sd_card_init()
         return;
     }
 
+    prepare_shared_spi_bus_for_sd_mount();
+
     sdmmc_host_t host                             = SDSPI_HOST_DEFAULT();
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {};
     mount_config.format_if_mount_failed           = false;
@@ -80,7 +107,8 @@ void Hal::sd_card_init()
         if (ret == ESP_FAIL) {
             mclog::tagError(kHalTag, "failed to mount filesystem");
         } else {
-            mclog::tagError(kHalTag, "failed to initialize the card, make sure SD card lines have pull-up resistors");
+            mclog::tagError(
+                kHalTag, "failed to initialize the card, make sure SD card lines have pull-up resistors, ret: {}", ret);
         }
 
         mclog::tagInfo(kHalTag, "sd card init failed, but spi bus remains initialized for retry");
