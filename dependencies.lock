@@ -1,6 +1,6 @@
 dependencies:
   espressif/cmake_utilities:
-    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
+    component_hash: 05165f30922b422b4b90c08845e6d449329b97370fbd06309803d8cb539d79e3
     dependencies:
     - name: idf
       require: private
@@ -8,23 +8,23 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 0.5.3
+    version: 1.1.1
   espressif/esp-now:
-    component_hash: 56f902e978ec0b70528ad30a45265b56bf2b91653d13e0badc78159f39f41ece
+    component_hash: 217f4e2c1672bcc71e5890fb3659528bbce5f1a8a995b1668fec9374acbd0f45
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
       require: private
-      version: 0.*
+      version: '>=0.5.3'
     - name: idf
       require: private
       version: '>=4.4'
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.5.2
+    version: 2.5.3
   espressif/esp_tinyusb:
-    component_hash: 96d232ced7afe1976119b62f7fbf1944a2a78b36228ff6f7b9318394ac1153cc
+    component_hash: 6a50305bc61c7a361da8c0833642be824e92dacb0a6001719a832a4e96e471bf
     dependencies:
     - name: idf
       require: private
@@ -36,7 +36,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.7.6~1
+    version: 1.7.6~2
   espressif/tinyusb:
     component_hash: 5ea9d3b6d6b0734a0a0b3491967aa0e1bece2974132294dbda5dd2839b247bfa
     dependencies:
@@ -57,7 +57,7 @@ dependencies:
       type: idf
     version: 5.4.3
   jgromes/radiolib:
-    component_hash: 7e367fd420aa66da05687e00dc3775c5891cd8236eee56d9d797d6eb04bb1918
+    component_hash: 3baedfa4c97b2f9d97c8066f587ff425585f670bb22e8f039202a23924e94de7
     dependencies:
     - name: idf
       require: private
@@ -65,12 +65,12 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 7.2.1
+    version: 7.6.0
 direct_dependencies:
 - espressif/esp-now
 - espressif/esp_tinyusb
 - idf
 - jgromes/radiolib
-manifest_hash: 05248d4225ee493c5ea82961a3eec365151fc6ca630d37cd5349644caf2fc55e
+manifest_hash: 82f46b41836c8f0704f0c0d61492f4b7885a6f2e73539693e56543c63c4be58e
 target: esp32s3
 version: 2.0.0
