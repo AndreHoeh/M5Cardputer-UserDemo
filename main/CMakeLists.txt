@@ -7,6 +7,11 @@ file(GLOB_RECURSE MY_SRCS
     "./apps/*.cpp"
 )
 
+list(APPEND MY_SRCS
+    "./apps/app_mp3_player/app_mp3_player.cpp"
+    "./apps/app_mp3_player/app_mp3_player_audio.cpp"
+)
+
 set(MY_INCLUDE_DIRS 
     "."
     "./assets"

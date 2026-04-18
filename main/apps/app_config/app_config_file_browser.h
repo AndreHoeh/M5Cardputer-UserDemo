@@ -22,6 +22,8 @@ public:
     void clear();
     bool refresh(std::string& errorMessage);
     void setViewportRows(std::size_t rows);
+    void setExtensionFilter(std::string extension);
+    const std::string& getExtensionFilter() const;
 
     bool moveUp();
     bool moveDown();
@@ -47,8 +49,10 @@ private:
     std::size_t _first_visible  = 0;
     std::size_t _viewport_rows  = 1;
     std::string _status_message;
+    std::string _extension_filter;
 
     static std::string buildPath(const std::string& fileName);
+    bool matchesExtension(const std::string& fileName) const;
     bool refreshInternal(const std::string& preferredPath, std::string& errorMessage);
     void ensureSelectionVisible();
     bool isValidFileName(const std::string& fileName, std::string& errorMessage) const;

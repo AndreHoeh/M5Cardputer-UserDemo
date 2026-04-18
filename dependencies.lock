@@ -1,4 +1,28 @@
 dependencies:
+  chmorgan/esp-audio-player:
+    component_hash: a19dba40c076e59baaf6383041b6feeb25135dbc5a5b8bcc6b497d8d947095c6
+    dependencies:
+    - name: chmorgan/esp-libhelix-mp3
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=1.0.0,<2.0.0'
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
+  chmorgan/esp-libhelix-mp3:
+    component_hash: cbb76089dc2c5749f7b470e2e70aedc44c9da519e04eb9a67d4c7ec275229e53
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.0.3
   espressif/cmake_utilities:
     component_hash: 05165f30922b422b4b90c08845e6d449329b97370fbd06309803d8cb539d79e3
     dependencies:
@@ -67,10 +91,11 @@ dependencies:
       type: service
     version: 7.6.0
 direct_dependencies:
+- chmorgan/esp-audio-player
 - espressif/esp-now
 - espressif/esp_tinyusb
 - idf
 - jgromes/radiolib
-manifest_hash: 82f46b41836c8f0704f0c0d61492f4b7885a6f2e73539693e56543c63c4be58e
+manifest_hash: c346eba31edc6fccbd558e10bfde93707a26ed25e9511fe14db2f2ac12191265
 target: esp32s3
 version: 2.0.0

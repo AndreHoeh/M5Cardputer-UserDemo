@@ -46,6 +46,16 @@ void AppConfigFileBrowser::setViewportRows(std::size_t rows)
     ensureSelectionVisible();
 }
 
+void AppConfigFileBrowser::setExtensionFilter(std::string extension)
+{
+    _extension_filter = to_lower_copy(extension);
+}
+
+const std::string& AppConfigFileBrowser::getExtensionFilter() const
+{
+    return _extension_filter;
+}
+
 bool AppConfigFileBrowser::moveUp()
 {
     if (_entries.empty() || _selected_index == 0) {
@@ -195,6 +205,20 @@ std::string AppConfigFileBrowser::buildPath(const std::string& fileName)
     return std::string(ROOT_PATH) + "/" + fileName;
 }
 
+bool AppConfigFileBrowser::matchesExtension(const std::string& fileName) const
+{
+    if (_extension_filter.empty()) {
+        return true;
+    }
+
+    const std::string lowered = to_lower_copy(fileName);
+    if (lowered.size() < _extension_filter.size()) {
+        return false;
+    }
+
+    return lowered.compare(lowered.size() - _extension_filter.size(), _extension_filter.size(), _extension_filter) == 0;
+}
+
 bool AppConfigFileBrowser::refreshInternal(const std::string& preferredPath, std::string& errorMessage)
 {
     DIR* directory = opendir(ROOT_PATH);
@@ -217,6 +241,10 @@ bool AppConfigFileBrowser::refreshInternal(const std::string& preferredPath, std
             continue;
         }
 
+        if (!matchesExtension(name)) {
+            continue;
+        }
+
         entries.push_back({name, path});
     }
 
@@ -235,7 +263,11 @@ bool AppConfigFileBrowser::refreshInternal(const std::string& preferredPath, std
     if (_entries.empty()) {
         _selected_index = 0;
         _first_visible  = 0;
-        _status_message = "N New  No files in /sdcard";
+        if (_extension_filter.empty()) {
+            _status_message = "N New  No files in /sdcard";
+        } else {
+            _status_message = "No matching files in /sdcard";
+        }
         return true;
     }
 

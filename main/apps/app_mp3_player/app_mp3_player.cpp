@@ -1,0 +1,270 @@
+/*
+ * SPDX-FileCopyrightText: 2025 M5Stack Technology CO LTD
+ *
+ * SPDX-License-Identifier: MIT
+ */
+#include "app_mp3_player.h"
+
+#include "app_sdcard/assets/tf_big.h"
+#include "app_sdcard/assets/tf_small.h"
+#include <apps/utils/audio/audio.h>
+#include <apps/utils/common.h>
+#include <apps/utils/theme.h>
+#include <assets.h>
+#include <hal.h>
+#include <mooncake_log.h>
+
+#include <cstring>
+
+using namespace mooncake;
+
+AppMp3Player::AppMp3Player()
+{
+    setAppInfo().name     = "MP3";
+    setAppInfo().userData = new AppIcon_t(image_data_tf_big, image_data_tf_small, false);
+}
+
+AppMp3Player::~AppMp3Player()
+{
+    delete static_cast<AppIcon_t*>(getAppInfo().userData);
+}
+
+void AppMp3Player::onOpen()
+{
+    mclog::tagInfo(getAppInfo().name, "on open");
+
+    _browser = std::make_unique<AppConfigFileBrowser>();
+    _audio   = std::make_unique<AppMp3PlayerAudio>();
+    _browser->setExtensionFilter(".mp3");
+    _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
+        [this](const Keyboard::KeyEvent_t& keyEvent) { handle_key_event(keyEvent); });
+    _status_message.clear();
+
+    audio::set_keyboard_sfx_enable(false);
+
+    GetHAL().canvas.setBaseColor(THEME_COLOR_BG);
+    GetHAL().canvas.setTextSize(1);
+    GetHAL().canvas.setTextScroll(false);
+
+    update_viewport_metrics();
+    refresh_browser();
+    if (!_audio->begin()) {
+        _status_message = "Audio init failed";
+    }
+    render();
+}
+
+void AppMp3Player::onRunning()
+{
+    if (_audio) {
+        handle_player_event(_audio->consumeLastEvent());
+    }
+
+    if (is_app_exit_requested()) {
+        close();
+    }
+}
+
+void AppMp3Player::onClose()
+{
+    mclog::tagInfo(getAppInfo().name, "on close");
+
+    if (_key_event_slot_id >= 0) {
+        GetHAL().keyboard.onKeyEvent.disconnect(_key_event_slot_id);
+        _key_event_slot_id = -1;
+    }
+
+    if (_audio) {
+        _audio->end();
+        _audio.reset();
+    }
+    _browser.reset();
+
+    audio::set_keyboard_sfx_enable(true);
+}
+
+void AppMp3Player::refresh_browser()
+{
+    if (!_browser) {
+        return;
+    }
+
+    auto sdState = GetHAL().sdCardProbe();
+    if (!sdState.is_mounted) {
+        _status_message = "SD card not mounted";
+        _browser->clear();
+        return;
+    }
+
+    std::string errorMessage;
+    if (!_browser->refresh(errorMessage)) {
+        _status_message = "Browse failed: " + errorMessage;
+        return;
+    }
+
+    if (_browser->getEntryCount() == 0) {
+        _status_message = "No MP3 files in /sdcard";
+    } else {
+        _status_message = "Enter Play  ;/. Move";
+    }
+}
+
+void AppMp3Player::update_viewport_metrics()
+{
+    if (!_browser) {
+        return;
+    }
+
+    const int usableHeight = GetHAL().canvas.height() - STATUS_BAR_HEIGHT;
+    const std::size_t rows = usableHeight > 0 ? static_cast<std::size_t>(usableHeight / FONT_REPL_HEIGHT) : 1;
+    _browser->setViewportRows(rows);
+}
+
+void AppMp3Player::render()
+{
+    GetHAL().canvas.fillScreen(THEME_COLOR_BG);
+    render_status_bar();
+    render_browser();
+    GetHAL().pushCanvas();
+}
+
+void AppMp3Player::render_status_bar()
+{
+    GetHAL().canvas.setFont(FONT_SMALL);
+    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    GetHAL().canvas.drawString("MP3 /sdcard", 0, 0);
+
+    GetHAL().canvas.setTextColor(TFT_CYAN, THEME_COLOR_BG);
+    GetHAL().canvas.drawString(truncate_text(_status_message, 36).c_str(), 0, 9);
+}
+
+void AppMp3Player::render_browser()
+{
+    GetHAL().canvas.setFont(FONT_REPL);
+
+    if (_browser == nullptr || _browser->getEntryCount() == 0) {
+        GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        GetHAL().canvas.drawString("(no mp3 files)", 0, STATUS_BAR_HEIGHT);
+        return;
+    }
+
+    const std::size_t firstIndex = _browser->getFirstVisibleIndex();
+    const std::string activePath = _audio ? _audio->getActivePath() : std::string();
+    const std::size_t maxColumns = static_cast<std::size_t>(GetHAL().canvas.width() / FONT_REPL_WIDTH);
+    for (std::size_t row = 0; row < _browser->getViewportRows(); ++row) {
+        const std::size_t entryIndex = firstIndex + row;
+        const auto* entry            = _browser->getEntry(entryIndex);
+        if (entry == nullptr) {
+            break;
+        }
+
+        const bool isSelected = entryIndex == _browser->getSelectedIndex();
+        const bool isPlaying  = entry->path == activePath;
+        const int y           = STATUS_BAR_HEIGHT + static_cast<int>(row * FONT_REPL_HEIGHT);
+        if (isSelected) {
+            GetHAL().canvas.fillRect(0, y, GetHAL().canvas.width(), FONT_REPL_HEIGHT, TFT_DARKGREEN);
+            GetHAL().canvas.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+        } else {
+            GetHAL().canvas.setTextColor(isPlaying ? TFT_YELLOW : TFT_WHITE, THEME_COLOR_BG);
+        }
+
+        std::string label = isPlaying ? "> " : "  ";
+        label += entry->name;
+        GetHAL().canvas.drawString(truncate_text(label, maxColumns).c_str(), 0, y);
+    }
+}
+
+void AppMp3Player::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
+{
+    if (_browser == nullptr || !keyEvent.state || keyEvent.isModifier) {
+        return;
+    }
+
+    bool shouldRender = false;
+    if (keyEvent.keyCode == KEY_SEMICOLON || keyEvent.keyCode == KEY_UP) {
+        shouldRender = _browser->moveUp();
+    } else if (keyEvent.keyCode == KEY_DOT || keyEvent.keyCode == KEY_DOWN) {
+        shouldRender = _browser->moveDown();
+    } else if (keyEvent.keyCode == KEY_ENTER) {
+        play_selected_file();
+        shouldRender = true;
+    }
+
+    if (shouldRender) {
+        render();
+    }
+}
+
+void AppMp3Player::handle_player_event(audio_player_callback_event_t event)
+{
+    if (event == AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN) {
+        return;
+    }
+
+    if (event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
+        _audio->clearActivePath();
+        _status_message = "Playback finished";
+    } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PLAYING) {
+        _status_message = "Playing " + make_display_name(_audio->getActivePath());
+    } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_COMPLETED_PLAYING_NEXT) {
+        _status_message = "Playing " + make_display_name(_audio->getActivePath());
+    } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PAUSE) {
+        _status_message = "Paused";
+    } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE) {
+        _audio->clearActivePath();
+        _status_message = "Unsupported audio file";
+    } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN) {
+        _audio->clearActivePath();
+        _status_message = "Audio stopped";
+    }
+
+    render();
+}
+
+void AppMp3Player::play_selected_file()
+{
+    if (_browser == nullptr || _audio == nullptr) {
+        return;
+    }
+
+    const auto* entry = _browser->getSelectedEntry();
+    if (entry == nullptr) {
+        _status_message = "No MP3 file selected";
+        return;
+    }
+
+    std::string errorMessage;
+    if (_audio->playFile(entry->path, errorMessage)) {
+        _status_message = "Playing " + entry->name;
+        return;
+    }
+
+    _status_message = "Play failed: " + errorMessage;
+}
+
+std::string AppMp3Player::make_display_name(const std::string& path) const
+{
+    if (path.empty()) {
+        return std::string();
+    }
+
+    const std::size_t separator = path.find_last_of('/');
+    if (separator == std::string::npos || separator + 1 >= path.size()) {
+        return path;
+    }
+
+    return path.substr(separator + 1);
+}
+
+std::string AppMp3Player::truncate_text(const std::string& value, std::size_t maxLength) const
+{
+    if (value.size() <= maxLength) {
+        return value;
+    }
+
+    if (maxLength <= 3) {
+        return value.substr(0, maxLength);
+    }
+
+    return value.substr(0, maxLength - 3) + "...";
+}
