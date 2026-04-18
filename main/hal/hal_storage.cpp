@@ -15,7 +15,7 @@
 
 namespace {
 constexpr char kHalTag[]     = "HAL";
-constexpr char kMountPoint[] = "/sdcard";
+constexpr char kMountPoint[] = "/sd";
 
 bool s_spi_bus_initialized = false;
 sdmmc_card_t* s_sd_card    = nullptr;

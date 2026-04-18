@@ -5,8 +5,8 @@
  */
 #pragma once
 
-#include "app_config/app_config_file_browser.h"
 #include "app_mp3_player_audio.h"
+#include "utils/file_browser.h"
 
 #include <cstdint>
 #include <hal/hal.h>
@@ -28,7 +28,7 @@ private:
     static constexpr int MIN_VOLUME_PERCENT  = 10;
     static constexpr int VOLUME_STEP_PERCENT = 10;
 
-    std::unique_ptr<AppConfigFileBrowser> _browser;
+    std::unique_ptr<SdFileBrowser> _browser;
     std::unique_ptr<AppMp3PlayerAudio> _audio;
     int _key_event_slot_id = -1;
     bool _stop_requested   = false;

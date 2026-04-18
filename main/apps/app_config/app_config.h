@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 #pragma once
-#include "app_config_file_browser.h"
 #include "app_config_editor.h"
+#include "utils/file_browser.h"
 #include <cstdint>
 #include <hal/hal.h>
 #include <memory>
@@ -32,7 +32,7 @@ private:
     };
 
     std::unique_ptr<AppConfigEditor> _editor;
-    std::unique_ptr<AppConfigFileBrowser> _browser;
+    std::unique_ptr<SdFileBrowser> _browser;
     int _key_event_slot_id            = -1;
     bool _cursor_visible              = true;
     std::uint32_t _cursor_update_time = 0;
@@ -44,6 +44,7 @@ private:
     void refresh_file_browser();
     void open_selected_file();
     void delete_selected_file();
+    bool create_file(const std::string& fileName, std::string& createdPath, std::string& errorMessage);
     void abort_editor();
     void begin_create_file();
     void cancel_create_file();

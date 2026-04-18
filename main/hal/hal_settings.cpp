@@ -10,7 +10,7 @@
 
 namespace {
 constexpr char kHalTag[]             = "HAL";
-constexpr char kSettingsConfigPath[] = "/sdcard/settings.conf";
+constexpr char kSettingsConfigPath[] = "/sd/settings.conf";
 }  // namespace
 
 void Hal::setting_init()

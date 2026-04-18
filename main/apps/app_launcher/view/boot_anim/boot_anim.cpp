@@ -71,7 +71,7 @@ void Launcher::boot_anim()
 
     // Play boot sfx from SD card.
     const int sfx_id =
-        GetMooncake().createExtension(std::make_unique<workers::SdAudioWorker>("/sdcard/boot_sfx.wav", 50, 0));
+        GetMooncake().createExtension(std::make_unique<workers::SdAudioWorker>("/sd/boot_sfx.wav", 50, 0));
 
     // Wait enter
     int egg_count = 0;

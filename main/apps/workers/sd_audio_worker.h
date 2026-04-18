@@ -10,7 +10,7 @@ namespace workers {
  *
  * Usage:
  * @param volume  Relative volume from 0..255, normalized against the current master volume
- *       std::make_unique<workers::SdAudioWorker>("/sdcard/my_sound.wav", volume, channel));
+ *       std::make_unique<workers::SdAudioWorker>("/sd/my_sound.wav", volume, channel));
  *   // Drive it each frame:
  *   GetMooncake().extensionManager()->updateAbilities();
  *   // When done:
@@ -24,7 +24,7 @@ namespace workers {
 class SdAudioWorker : public mooncake::WorkerAbility {
 public:
     /**
-     * @param sdPath  Full VFS path, e.g. "/sdcard/boot_sfx.wav"
+     * @param sdPath  Full VFS path, e.g. "/sd/boot_sfx.wav"
      * @param volume  Reference volume scaled against the current master volume
      * @param channel Speaker channel index (default 0); pass -1 for auto-select
      */

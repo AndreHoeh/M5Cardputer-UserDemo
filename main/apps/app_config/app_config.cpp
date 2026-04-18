@@ -13,8 +13,11 @@
 #include <hal.h>
 #include <mooncake_log.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <string>
+#include <sys/stat.h>
 
 using namespace mooncake;
 
@@ -37,6 +40,33 @@ bool has_text_input_modifiers(uint8_t modifierMask)
     return (modifierMask &
             (KEY_MOD_LCTRL | KEY_MOD_RCTRL | KEY_MOD_LMETA | KEY_MOD_RMETA | KEY_MOD_LALT | KEY_MOD_RALT)) != 0;
 }
+
+bool is_valid_file_name(const std::string& fileName, std::string& errorMessage)
+{
+    if (fileName.empty()) {
+        errorMessage = "file name required";
+        return false;
+    }
+
+    if (fileName == "." || fileName == "..") {
+        errorMessage = "invalid file name";
+        return false;
+    }
+
+    for (char ch : fileName) {
+        if (ch == '/' || ch == '\\') {
+            errorMessage = "slashes are not allowed";
+            return false;
+        }
+
+        if (static_cast<unsigned char>(ch) < 32) {
+            errorMessage = "invalid file name";
+            return false;
+        }
+    }
+
+    return true;
+}
 }  // namespace
 
 AppConfig::AppConfig()
@@ -55,7 +85,7 @@ void AppConfig::onOpen()
     mclog::tagInfo(getAppInfo().name, "on open");
 
     _editor            = std::make_unique<AppConfigEditor>();
-    _browser           = std::make_unique<AppConfigFileBrowser>();
+    _browser           = std::make_unique<SdFileBrowser>();
     _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
         [this](const Keyboard::KeyEvent_t& keyEvent) { handle_key_event(keyEvent); });
     _cursor_visible     = true;
@@ -129,7 +159,14 @@ void AppConfig::refresh_file_browser()
     if (!_browser->refresh(errorMessage)) {
         _browser->clear();
         _browser->setStatusMessage(fmt::format("Browse failed: {}", errorMessage));
-        mclog::tagWarn(getAppInfo().name, "failed to refresh {}: {}", AppConfigFileBrowser::ROOT_PATH, errorMessage);
+        mclog::tagWarn(getAppInfo().name, "failed to refresh {}: {}", SdFileBrowser::ROOT_PATH, errorMessage);
+        return;
+    }
+
+    if (_browser->getEntryCount() == 0) {
+        _browser->setStatusMessage(fmt::format("N New  No files in {}", _browser->getCurrentPath()));
+    } else {
+        _browser->setStatusMessage("N New  Enter Open  D Delete");
     }
 }
 
@@ -144,6 +181,21 @@ void AppConfig::open_selected_file()
         return;
     }
 
+    if (entry->is_directory) {
+        std::string errorMessage;
+        if (!_browser->enterSelectedDirectory(errorMessage)) {
+            _browser->setStatusMessage(fmt::format("Browse failed: {}", errorMessage));
+            return;
+        }
+
+        if (_browser->getEntryCount() == 0) {
+            _browser->setStatusMessage(fmt::format("N New  No files in {}", _browser->getCurrentPath()));
+        } else {
+            _browser->setStatusMessage("N New  Enter Open  D Delete");
+        }
+        return;
+    }
+
     load_editor_content(entry->path);
 }
 
@@ -153,17 +205,65 @@ void AppConfig::delete_selected_file()
         return;
     }
 
-    std::string deletedPath;
-    std::string errorMessage;
-    if (_browser->deleteSelectedFile(deletedPath, errorMessage)) {
-        mclog::tagInfo(getAppInfo().name, "deleted {}", deletedPath);
+    const auto* entry = _browser->getSelectedEntry();
+    if (entry == nullptr) {
+        _browser->setStatusMessage("Delete failed: no file selected");
         return;
     }
 
-    _browser->setStatusMessage(fmt::format("Delete failed: {}", errorMessage));
-    if (!deletedPath.empty()) {
-        mclog::tagWarn(getAppInfo().name, "failed to delete {}: {}", deletedPath, errorMessage);
+    if (entry->is_directory) {
+        _browser->setStatusMessage("Delete failed: directories are not supported");
+        return;
     }
+
+    const std::string deletedPath = entry->path;
+    const std::string deletedName = entry->name;
+    if (std::remove(deletedPath.c_str()) == 0) {
+        mclog::tagInfo(getAppInfo().name, "deleted {}", deletedPath);
+        refresh_file_browser();
+        if (_browser != nullptr) {
+            _browser->setStatusMessage(fmt::format("Deleted {}", deletedName));
+        }
+        return;
+    }
+
+    const std::string errorMessage = std::strerror(errno);
+    _browser->setStatusMessage(fmt::format("Delete failed: {}", errorMessage));
+    mclog::tagWarn(getAppInfo().name, "failed to delete {}: {}", deletedPath, errorMessage);
+}
+
+bool AppConfig::create_file(const std::string& fileName, std::string& createdPath, std::string& errorMessage)
+{
+    if (!is_valid_file_name(fileName, errorMessage)) {
+        return false;
+    }
+
+    const std::string currentPath = _browser ? _browser->getCurrentPath() : std::string(SdFileBrowser::ROOT_PATH);
+    const std::string path        = SdFileBrowser::buildPath(currentPath, fileName);
+    struct stat fileInfo          = {};
+    if (stat(path.c_str(), &fileInfo) == 0) {
+        errorMessage = "file already exists";
+        return false;
+    }
+
+    if (errno != ENOENT) {
+        errorMessage = std::strerror(errno);
+        return false;
+    }
+
+    FILE* file = fopen(path.c_str(), "wb");
+    if (file == nullptr) {
+        errorMessage = std::strerror(errno);
+        return false;
+    }
+
+    if (fclose(file) != 0) {
+        errorMessage = std::strerror(errno);
+        return false;
+    }
+
+    createdPath = path;
+    return true;
 }
 
 void AppConfig::abort_editor()
@@ -201,7 +301,11 @@ void AppConfig::cancel_create_file()
     _create_file_name.clear();
     _state = ViewState::Browser;
     if (_browser) {
-        _browser->setStatusMessage("N New  Enter Open  D Delete");
+        if (_browser->getEntryCount() == 0) {
+            _browser->setStatusMessage(fmt::format("N New  No files in {}", _browser->getCurrentPath()));
+        } else {
+            _browser->setStatusMessage("N New  Enter Open  D Delete");
+        }
     }
 }
 
@@ -213,12 +317,16 @@ void AppConfig::commit_create_file()
 
     std::string createdPath;
     std::string errorMessage;
-    if (!_browser->createFile(_create_file_name, createdPath, errorMessage)) {
+    if (!create_file(_create_file_name, createdPath, errorMessage)) {
         _browser->setStatusMessage(fmt::format("Create failed: {}", errorMessage));
         return;
     }
 
     mclog::tagInfo(getAppInfo().name, "created {}", createdPath);
+    refresh_file_browser();
+    if (_browser != nullptr) {
+        _browser->setStatusMessage(fmt::format("Created {}", _create_file_name));
+    }
     _create_file_name.clear();
     _state = ViewState::Browser;
 }
@@ -261,10 +369,12 @@ void AppConfig::render_status_bar()
                              _active_file_path.empty() ? "(no file)" : _active_file_path);
         status = _editor->getStatusMessage();
     } else if (_state == ViewState::CreateFile) {
-        header = "BROWSE /sdcard";
+        header =
+            fmt::format("BROWSE {}", _browser ? _browser->getCurrentPath() : std::string(SdFileBrowser::ROOT_PATH));
         status = fmt::format("NEW: {}_  Enter Create  Esc Cancel", _create_file_name);
     } else {
-        header = fmt::format("BROWSE {}", AppConfigFileBrowser::ROOT_PATH);
+        header =
+            fmt::format("BROWSE {}", _browser ? _browser->getCurrentPath() : std::string(SdFileBrowser::ROOT_PATH));
         status = _browser ? _browser->getStatusMessage() : std::string();
     }
 
@@ -302,7 +412,14 @@ void AppConfig::render_browser()
             GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
         }
 
-        GetHAL().canvas.drawString(truncate_status_text(entry->name, _editor->getViewportColumns()).c_str(), 0, y);
+        std::string label = entry->name;
+        if (entry->is_parent) {
+            label = "../";
+        } else if (entry->is_directory) {
+            label += "/";
+        }
+
+        GetHAL().canvas.drawString(truncate_status_text(label, _editor->getViewportColumns()).c_str(), 0, y);
     }
 }
 

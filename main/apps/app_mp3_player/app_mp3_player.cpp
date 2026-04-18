@@ -33,7 +33,7 @@ void AppMp3Player::onOpen()
 {
     mclog::tagInfo(getAppInfo().name, "on open");
 
-    _browser = std::make_unique<AppConfigFileBrowser>();
+    _browser = std::make_unique<SdFileBrowser>();
     _audio   = std::make_unique<AppMp3PlayerAudio>();
     _browser->setExtensionFilter(".mp3");
     _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
@@ -104,10 +104,11 @@ void AppMp3Player::refresh_browser()
     }
 
     if (_browser->getEntryCount() == 0) {
-        _status_message = "No MP3 files in /sdcard";
+        _status_message = "No MP3 files in " + _browser->getCurrentPath();
     } else {
         _status_message = "Enter Play  ;/. Move";
     }
+    _browser->setStatusMessage(_status_message);
 }
 
 void AppMp3Player::update_viewport_metrics()
@@ -133,7 +134,10 @@ void AppMp3Player::render_status_bar()
 {
     GetHAL().canvas.setFont(FONT_SMALL);
     GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-    GetHAL().canvas.drawString("MP3 /sdcard", 0, 0);
+    GetHAL().canvas.drawString(
+        truncate_text("MP3 " + (_browser ? _browser->getCurrentPath() : std::string(SdFileBrowser::ROOT_PATH)), 36)
+            .c_str(),
+        0, 0);
 
     GetHAL().canvas.setTextColor(TFT_CYAN, THEME_COLOR_BG);
     GetHAL().canvas.drawString(truncate_text(_status_message, 36).c_str(), 0, 9);
@@ -170,7 +174,14 @@ void AppMp3Player::render_browser()
         }
 
         std::string label = isPlaying ? "> " : "  ";
-        label += entry->name;
+        if (entry->is_parent) {
+            label += "../";
+        } else {
+            label += entry->name;
+            if (entry->is_directory) {
+                label += "/";
+            }
+        }
         GetHAL().canvas.drawString(truncate_text(label, maxColumns).c_str(), 0, y);
     }
 }
@@ -258,6 +269,22 @@ void AppMp3Player::play_selected_file()
     const auto* entry = _browser->getSelectedEntry();
     if (entry == nullptr) {
         _status_message = "No MP3 file selected";
+        return;
+    }
+
+    if (entry->is_directory) {
+        std::string errorMessage;
+        if (!_browser->enterSelectedDirectory(errorMessage)) {
+            _status_message = "Browse failed: " + errorMessage;
+            return;
+        }
+
+        if (_browser->getEntryCount() == 0) {
+            _status_message = "No MP3 files in " + _browser->getCurrentPath();
+        } else {
+            _status_message = "Enter Play  ;/. Move";
+        }
+        _browser->setStatusMessage(_status_message);
         return;
     }
 
