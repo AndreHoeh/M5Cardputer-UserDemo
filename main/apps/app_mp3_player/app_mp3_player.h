@@ -24,11 +24,14 @@ public:
     void onClose() override;
 
 private:
-    static constexpr int STATUS_BAR_HEIGHT = 18;
+    static constexpr int STATUS_BAR_HEIGHT   = 18;
+    static constexpr int MIN_VOLUME_PERCENT  = 10;
+    static constexpr int VOLUME_STEP_PERCENT = 10;
 
     std::unique_ptr<AppConfigFileBrowser> _browser;
     std::unique_ptr<AppMp3PlayerAudio> _audio;
     int _key_event_slot_id = -1;
+    bool _stop_requested   = false;
     std::string _status_message;
 
     void refresh_browser();
@@ -38,7 +41,9 @@ private:
     void render_browser();
     void handle_key_event(const Keyboard::KeyEvent_t& keyEvent);
     void handle_player_event(audio_player_callback_event_t event);
+    void adjust_volume(int percentDelta);
     void play_selected_file();
+    int get_volume_percent() const;
     std::string make_display_name(const std::string& path) const;
     std::string truncate_text(const std::string& value, std::size_t maxLength) const;
 };

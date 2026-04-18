@@ -38,6 +38,7 @@ void AppMp3Player::onOpen()
     _browser->setExtensionFilter(".mp3");
     _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
         [this](const Keyboard::KeyEvent_t& keyEvent) { handle_key_event(keyEvent); });
+    _stop_requested = false;
     _status_message.clear();
 
     audio::set_keyboard_sfx_enable(false);
@@ -185,6 +186,12 @@ void AppMp3Player::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
         shouldRender = _browser->moveUp();
     } else if (keyEvent.keyCode == KEY_DOT || keyEvent.keyCode == KEY_DOWN) {
         shouldRender = _browser->moveDown();
+    } else if (keyEvent.keyCode == KEY_MINUS) {
+        adjust_volume(-VOLUME_STEP_PERCENT);
+        shouldRender = true;
+    } else if (keyEvent.keyCode == KEY_EQUAL) {
+        adjust_volume(VOLUME_STEP_PERCENT);
+        shouldRender = true;
     } else if (keyEvent.keyCode == KEY_ENTER) {
         play_selected_file();
         shouldRender = true;
@@ -203,10 +210,17 @@ void AppMp3Player::handle_player_event(audio_player_callback_event_t event)
 
     if (event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
         _audio->clearActivePath();
-        _status_message = "Playback finished";
+        if (_stop_requested) {
+            _status_message = "Playback stopped";
+            _stop_requested = false;
+        } else {
+            _status_message = "Playback finished";
+        }
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PLAYING) {
+        _stop_requested = false;
         _status_message = "Playing " + make_display_name(_audio->getActivePath());
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_COMPLETED_PLAYING_NEXT) {
+        _stop_requested = false;
         _status_message = "Playing " + make_display_name(_audio->getActivePath());
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PAUSE) {
         _status_message = "Paused";
@@ -221,6 +235,20 @@ void AppMp3Player::handle_player_event(audio_player_callback_event_t event)
     render();
 }
 
+void AppMp3Player::adjust_volume(int percentDelta)
+{
+    const int currentPercent = get_volume_percent();
+    const int nextPercent    = std::clamp(currentPercent + percentDelta, MIN_VOLUME_PERCENT, 100);
+    const int nextVolume     = (255 * nextPercent + 50) / 100;
+
+    if (!GetHAL().setSpeakerVolume(nextVolume)) {
+        _status_message = "Volume change failed";
+        return;
+    }
+
+    _status_message = "Volume " + std::to_string(nextPercent) + "%";
+}
+
 void AppMp3Player::play_selected_file()
 {
     if (_browser == nullptr || _audio == nullptr) {
@@ -233,13 +261,28 @@ void AppMp3Player::play_selected_file()
         return;
     }
 
+    if (_audio->isPlaying() && entry->path == _audio->getActivePath()) {
+        _stop_requested = true;
+        _audio->stop();
+        _audio->clearActivePath();
+        _status_message = "Playback stopped";
+        return;
+    }
+
     std::string errorMessage;
     if (_audio->playFile(entry->path, errorMessage)) {
+        _stop_requested = false;
         _status_message = "Playing " + entry->name;
         return;
     }
 
     _status_message = "Play failed: " + errorMessage;
+}
+
+int AppMp3Player::get_volume_percent() const
+{
+    const int volume = GetHAL().getSpeakerVolume();
+    return std::clamp((volume * 100 + 127) / 255, 0, 100);
 }
 
 std::string AppMp3Player::make_display_name(const std::string& path) const
