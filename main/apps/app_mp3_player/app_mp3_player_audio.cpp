@@ -6,6 +6,7 @@
 #include "app_mp3_player_audio.h"
 
 #include <apps/utils/audio/audio.h>
+#include <apps/utils/audio/speaker_arbiter.h>
 #include <hal.h>
 #include <mooncake_log.h>
 
@@ -103,8 +104,15 @@ bool AppMp3PlayerAudio::playFile(const std::string& path, std::string& errorMess
         return false;
     }
 
+    const bool speakerAcquired = audio::try_acquire_speaker(audio::SpeakerOwner::Mp3Playback);
+    if (!speakerAcquired) {
+        errorMessage = std::string("audio busy: ") + audio::describe_speaker_owner(audio::current_speaker_owner());
+        return false;
+    }
+
     FILE* file = fopen(path.c_str(), "rb");
     if (file == nullptr) {
+        audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
         errorMessage = std::strerror(errno);
         return false;
     }
@@ -113,6 +121,7 @@ bool AppMp3PlayerAudio::playFile(const std::string& path, std::string& errorMess
     esp_err_t err                  = audio_player_play(file);
     if (err != ESP_OK) {
         fclose(file);
+        audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
         errorMessage = "play request failed";
         return false;
     }
@@ -173,6 +182,7 @@ void AppMp3PlayerAudio::handleAudioEvent(audio_player_cb_ctx_t* ctx)
     if (ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE ||
         ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN ||
         ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE) {
+        audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
         audio::set_speaker_sfx_suppressed(false);
     }
 }
@@ -280,6 +290,10 @@ esp_err_t AppMp3PlayerAudio::onWrite(void* audioBuffer, size_t len, size_t* byte
 
 void AppMp3PlayerAudio::prepareSpeaker()
 {
+    if (!audio::can_use_speaker(audio::SpeakerOwner::Mp3Playback)) {
+        return;
+    }
+
     _speaker_was_running = GetHAL().speaker.isRunning();
     if (!_speaker_was_running) {
         GetHAL().speaker.begin();
@@ -293,4 +307,5 @@ void AppMp3PlayerAudio::restoreSpeaker()
     if (!_speaker_was_running) {
         GetHAL().speaker.end();
     }
+    audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
 }

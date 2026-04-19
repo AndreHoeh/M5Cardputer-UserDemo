@@ -7,10 +7,14 @@
 #include "assets/record_big.h"
 #include "assets/record_small.h"
 #include <apps/utils/audio/audio.h>
+#include <apps/utils/audio/speaker_arbiter.h>
 #include <apps/utils/common.h>
 #include <apps/utils/theme.h>
 #include <mooncake_log.h>
 #include <assets.h>
+
+#include <new>
+#include <cstdio>
 
 using namespace mooncake;
 
@@ -35,10 +39,11 @@ void AppRecord::onOpen()
 
     audio::set_keyboard_sfx_enable(false);
 
-    _rec_data = new int16_t[RECORD_SIZE]();
+    clear_status_message();
 
-    start_recording();
-    render_page_recording();
+    if (!start_recording()) {
+        render_page_message(_status_message.data());
+    }
 }
 
 void AppRecord::onRunning()
@@ -73,9 +78,12 @@ void AppRecord::onClose()
     }
 
     // Cleanup audio devices
-    GetHAL().mic.end();
-    GetHAL().speaker.begin();
-    GetHAL().applyScaledSpeakerVolume(1.0f);
+    if (audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
+        GetHAL().mic.end();
+        GetHAL().speaker.begin();
+        GetHAL().applyScaledSpeakerVolume(1.0f);
+        audio::release_speaker(audio::SpeakerOwner::Recorder);
+    }
 
     // Free memory
     if (_rec_data) {
@@ -86,8 +94,20 @@ void AppRecord::onClose()
     audio::set_keyboard_sfx_enable(true);
 }
 
-void AppRecord::start_recording()
+bool AppRecord::start_recording()
 {
+    if (!audio::try_acquire_speaker(audio::SpeakerOwner::Recorder)) {
+        _is_recording = false;
+        set_audio_busy_status_message();
+        return false;
+    }
+
+    if (!ensure_record_buffer()) {
+        _is_recording = false;
+        audio::release_speaker(audio::SpeakerOwner::Recorder);
+        return false;
+    }
+
     // Since microphone and speaker cannot be used at the same time, turn off speaker
     GetHAL().speaker.end();
     GetHAL().applyScaledSpeakerVolume(1.0f);
@@ -100,12 +120,23 @@ void AppRecord::start_recording()
     GetHAL().mic.begin();
 
     _is_recording = true;
+    clear_status_message();
+    render_page_recording();
+    return true;
 }
 
-void AppRecord::start_playback()
+bool AppRecord::start_playback()
 {
-    if (!GetHAL().speaker.isEnabled()) {
-        return;
+    if (!audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
+        set_audio_busy_status_message();
+        render_page_message(_status_message.data());
+        return false;
+    }
+
+    if (_rec_data == nullptr) {
+        set_status_message("Recorder buffer unavailable");
+        render_page_message(_status_message.data());
+        return false;
     }
 
     // Stop recording and start playback
@@ -136,6 +167,7 @@ void AppRecord::start_playback()
     // Resume recording
     start_recording();
     render_page_recording();
+    return true;
 }
 
 void AppRecord::render_page_recording()
@@ -145,6 +177,16 @@ void AppRecord::render_page_recording()
     GetHAL().canvas.setCursor(10, 0);
     GetHAL().canvas.setTextSize(1);
     GetHAL().canvas.print("Press enter to play");
+    GetHAL().pushCanvas();
+}
+
+void AppRecord::render_page_message(const char* message)
+{
+    GetHAL().canvas.fillScreen(THEME_COLOR_BG);
+    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    GetHAL().canvas.setCursor(10, 0);
+    GetHAL().canvas.setTextSize(1);
+    GetHAL().canvas.print(message != nullptr ? message : "Audio unavailable");
     GetHAL().pushCanvas();
 }
 
@@ -219,5 +261,48 @@ void AppRecord::render_waveform()
 
 void AppRecord::handle_enter_key()
 {
-    start_playback();
+    if (_is_recording) {
+        start_playback();
+        return;
+    }
+
+    if (!start_recording()) {
+        render_page_message(_status_message.data());
+    }
+}
+
+bool AppRecord::ensure_record_buffer()
+{
+    if (_rec_data != nullptr) {
+        return true;
+    }
+
+    _rec_data = new (std::nothrow) int16_t[RECORD_SIZE]();
+    if (_rec_data != nullptr) {
+        return true;
+    }
+
+    set_status_message("Recorder buffer alloc failed");
+    return false;
+}
+
+void AppRecord::clear_status_message()
+{
+    _status_message[0] = '\0';
+}
+
+void AppRecord::set_status_message(const char* message)
+{
+    if (message == nullptr) {
+        clear_status_message();
+        return;
+    }
+
+    std::snprintf(_status_message.data(), _status_message.size(), "%s", message);
+}
+
+void AppRecord::set_audio_busy_status_message()
+{
+    std::snprintf(_status_message.data(), _status_message.size(), "Audio busy: %s",
+                  audio::describe_speaker_owner(audio::current_speaker_owner()));
 }

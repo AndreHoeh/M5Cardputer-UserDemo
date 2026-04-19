@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 #pragma once
+#include "speaker_arbiter.h"
+
 #include <cstdint>
 #include <vector>
 

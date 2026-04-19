@@ -1,4 +1,6 @@
 #include "sd_audio_worker.h"
+
+#include <apps/utils/audio/speaker_arbiter.h>
 #include <hal.h>
 #include <mooncake_log.h>
 #include <cstdio>
@@ -18,14 +20,25 @@ SdAudioWorker::SdAudioWorker(std::string sdPath, float relative_volume, int chan
 
 void SdAudioWorker::onCreate()
 {
+    _owns_speaker = audio::try_acquire_speaker(audio::SpeakerOwner::SdAudioWorker);
+    if (!_owns_speaker) {
+        mclog::tagWarn(_tag, "speaker busy, skipping {} (owner={})", _sd_path,
+                       audio::describe_speaker_owner(audio::current_speaker_owner()));
+        return;
+    }
+
     if (!GetHAL().ensureSdCardMounted()) {
         mclog::tagWarn(_tag, "SD card not mounted, skipping: {}", _sd_path);
+        audio::release_speaker(audio::SpeakerOwner::SdAudioWorker);
+        _owns_speaker = false;
         return;
     }
 
     FILE* fp = fopen(_sd_path.c_str(), "rb");
     if (!fp) {
         mclog::tagWarn(_tag, "file not found: {}", _sd_path);
+        audio::release_speaker(audio::SpeakerOwner::SdAudioWorker);
+        _owns_speaker = false;
         return;
     }
 
@@ -37,6 +50,8 @@ void SdAudioWorker::onCreate()
     if (!_wav_buf) {
         mclog::tagWarn(_tag, "malloc failed ({} bytes)", _wav_size);
         fclose(fp);
+        audio::release_speaker(audio::SpeakerOwner::SdAudioWorker);
+        _owns_speaker = false;
         return;
     }
 
@@ -57,6 +72,10 @@ void SdAudioWorker::onDestroy()
         _wav_buf = nullptr;
     }
     GetHAL().setSpeakerVolume(_volume_before);
+    if (_owns_speaker) {
+        audio::release_speaker(audio::SpeakerOwner::SdAudioWorker);
+        _owns_speaker = false;
+    }
 }
 
 }  // namespace workers

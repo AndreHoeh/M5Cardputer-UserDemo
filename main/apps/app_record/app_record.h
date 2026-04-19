@@ -5,6 +5,7 @@
  */
 #pragma once
 #include <mooncake.h>
+#include <array>
 #include <cstdint>
 #include <hal/hal.h>
 
@@ -34,11 +35,17 @@ private:
     size_t _rec_record_idx  = 2;
     size_t _draw_record_idx = 0;
     bool _is_recording      = true;
+    std::array<char, 64> _status_message{};
 
     void render_page_recording();
     void render_page_playing();
+    void render_page_message(const char* message);
     void render_waveform();
     void handle_enter_key();
-    void start_recording();
-    void start_playback();
+    bool ensure_record_buffer();
+    void clear_status_message();
+    void set_status_message(const char* message);
+    void set_audio_busy_status_message();
+    bool start_recording();
+    bool start_playback();
 };

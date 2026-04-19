@@ -38,8 +38,9 @@ private:
     float _relative_volume;
     uint8_t _volume_before;
     int _channel;
-    uint8_t* _wav_buf = nullptr;
-    size_t _wav_size  = 0;
+    bool _owns_speaker = false;
+    uint8_t* _wav_buf  = nullptr;
+    size_t _wav_size   = 0;
 };
 
 }  // namespace workers

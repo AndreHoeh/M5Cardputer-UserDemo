@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include "esp_random.h"
+#include "speaker_arbiter.h"
 #include <hal/hal.h>
 #include <mooncake_log.h>
 
@@ -23,7 +24,7 @@ const int c_major_scale[] = {60, 62, 64, 65, 67, 69, 71};  // C大调音阶（C 
 
 void play_tone(int frequency, double durationSec)
 {
-    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load() || !can_use_speaker(SpeakerOwner::None)) {
         return;
     }
 
@@ -53,7 +54,7 @@ void play_tone(int frequency, double durationSec)
 
 void play_melody(const std::vector<int>& midiList, double durationSec = 0.1)
 {
-    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load() || !can_use_speaker(SpeakerOwner::None)) {
         return;
     }
 
@@ -91,7 +92,7 @@ void play_melody(const std::vector<int>& midiList, double durationSec = 0.1)
 
 void play_tone_from_midi(int midi, double durationSec)
 {
-    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load() || !can_use_speaker(SpeakerOwner::None)) {
         return;
     }
 
@@ -101,7 +102,7 @@ void play_tone_from_midi(int midi, double durationSec)
 
 void play_random_tone(int semitoneShift = 0, double durationSec = 0.15)
 {
-    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load() || !can_use_speaker(SpeakerOwner::None)) {
         return;
     }
 
@@ -117,7 +118,7 @@ void play_random_tone(int semitoneShift = 0, double durationSec = 0.15)
 /* -------------------------------------------------------------------------- */
 static void _keyboard_sfx_on_key_event(const Keyboard::KeyEvent_t& event)
 {
-    if (!event.state || g_speaker_sfx_suppressed.load()) {
+    if (!event.state || g_speaker_sfx_suppressed.load() || !can_use_speaker(SpeakerOwner::None)) {
         return;
     }
 
