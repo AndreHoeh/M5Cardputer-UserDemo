@@ -229,12 +229,19 @@ void AppMp3Player::handle_player_event(audio_player_callback_event_t event)
     }
 
     if (event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
-        playback().clearActivePath();
+        const std::string finishedPath = playback().getActivePath();
         if (_stop_requested) {
+            playback().clearActivePath();
             _status_message = "Playback stopped";
             _stop_requested = false;
+        } else if (play_next_song_after(finishedPath)) {
+            render();
+            return;
         } else {
-            _status_message = "Playback finished";
+            if (_status_message.rfind("Auto-play failed:", 0) != 0) {
+                _status_message = "Playback finished";
+            }
+            playback().clearActivePath();
         }
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PLAYING) {
         _stop_requested = false;
@@ -312,6 +319,44 @@ void AppMp3Player::play_selected_file()
     }
 
     _status_message = "Play failed: " + errorMessage;
+}
+
+bool AppMp3Player::play_next_song_after(const std::string& path)
+{
+    if (_browser == nullptr || path.empty()) {
+        return false;
+    }
+
+    std::string errorMessage;
+    if (!_browser->focusPath(path, errorMessage)) {
+        return false;
+    }
+
+    const auto* currentEntry = _browser->getSelectedEntry();
+    if (currentEntry == nullptr || currentEntry->path != path) {
+        return false;
+    }
+
+    for (std::size_t index = _browser->getSelectedIndex() + 1; index < _browser->getEntryCount(); ++index) {
+        const auto* entry = _browser->getEntry(index);
+        if (entry == nullptr || entry->is_directory || entry->is_parent) {
+            continue;
+        }
+
+        if (!playback().playFile(entry->path, errorMessage)) {
+            _status_message = "Auto-play failed: " + errorMessage;
+            _browser->setStatusMessage(_status_message);
+            return false;
+        }
+
+        _stop_requested = false;
+        _status_message = "Playing " + entry->name;
+        _browser->setStatusMessage(_status_message);
+        sync_browser_to_active_track();
+        return true;
+    }
+
+    return false;
 }
 
 void AppMp3Player::stop_current_song()
