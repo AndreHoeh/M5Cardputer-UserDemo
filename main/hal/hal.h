@@ -198,6 +198,11 @@ public:
         }
     };
 
+    bool ensureSdCardMounted();
+    bool isSdCardMounted() const
+    {
+        return _is_sd_card_mounted;
+    }
     SdCardProbeResult_t sdCardProbe();
 
     /* ----------------------------------- Cap ---------------------------------- */

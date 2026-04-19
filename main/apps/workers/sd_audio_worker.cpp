@@ -18,8 +18,7 @@ SdAudioWorker::SdAudioWorker(std::string sdPath, float relative_volume, int chan
 
 void SdAudioWorker::onCreate()
 {
-    auto sd = GetHAL().sdCardProbe();
-    if (!sd.is_mounted) {
+    if (!GetHAL().ensureSdCardMounted()) {
         mclog::tagWarn(_tag, "SD card not mounted, skipping: {}", _sd_path);
         return;
     }

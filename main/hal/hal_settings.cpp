@@ -41,9 +41,7 @@ void Hal::loadSettingsFromSdConfig()
         return;
     }
 
-    sd_card_init();
-
-    if (!_is_sd_card_mounted) {
+    if (!ensureSdCardMounted()) {
         mclog::tagInfo(kHalTag, "skip SD settings config: SD card not mounted");
         return;
     }

@@ -120,17 +120,23 @@ void Hal::sd_card_init()
     _is_sd_card_mounted = true;
 }
 
+bool Hal::ensureSdCardMounted()
+{
+    if (!_is_sd_card_mounted) {
+        sd_card_init();
+    }
+
+    return _is_sd_card_mounted;
+}
+
 Hal::SdCardProbeResult_t Hal::sdCardProbe()
 {
     SdCardProbeResult_t result;
 
-    if (!_is_sd_card_mounted) {
-        sd_card_init();
-        if (!_is_sd_card_mounted) {
-            result.is_mounted = false;
-            result.size       = "Not Found";
-            return result;
-        }
+    if (!ensureSdCardMounted()) {
+        result.is_mounted = false;
+        result.size       = "Not Found";
+        return result;
     }
 
     result.is_mounted = true;

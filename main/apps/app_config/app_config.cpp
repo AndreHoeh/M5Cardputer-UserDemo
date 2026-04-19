@@ -148,8 +148,7 @@ void AppConfig::refresh_file_browser()
         return;
     }
 
-    const auto probeResult = GetHAL().sdCardProbe();
-    if (!probeResult.is_mounted) {
+    if (!GetHAL().ensureSdCardMounted()) {
         _browser->clear();
         _browser->setStatusMessage("Insert SD card  N disabled");
         return;
@@ -286,8 +285,7 @@ void AppConfig::abort_editor()
 
 void AppConfig::begin_create_file()
 {
-    const auto probeResult = GetHAL().sdCardProbe();
-    if (!probeResult.is_mounted) {
+    if (!GetHAL().ensureSdCardMounted()) {
         _browser->setStatusMessage("Insert SD card before creating files");
         return;
     }

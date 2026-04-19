@@ -90,8 +90,7 @@ void AppMp3Player::refresh_browser()
         return;
     }
 
-    auto sdState = GetHAL().sdCardProbe();
-    if (!sdState.is_mounted) {
+    if (!GetHAL().ensureSdCardMounted()) {
         _status_message = "SD card not mounted";
         _browser->clear();
         return;
