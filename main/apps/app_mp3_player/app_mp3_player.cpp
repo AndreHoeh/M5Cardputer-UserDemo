@@ -47,7 +47,7 @@ void AppMp3Player::onOpen()
     GetHAL().canvas.setTextScroll(false);
 
     update_viewport_metrics();
-    refresh_browser();
+    sync_browser_to_active_track();
     if (!playback().begin()) {
         _status_message = "Audio init failed";
     }
@@ -200,6 +200,12 @@ void AppMp3Player::handle_key_event(const Keyboard::KeyEvent_t& keyEvent)
         shouldRender = _browser->moveUp();
     } else if (keyEvent.keyCode == KEY_DOT || keyEvent.keyCode == KEY_DOWN) {
         shouldRender = _browser->moveDown();
+    } else if (keyEvent.keyCode == KEY_0) {
+        stop_current_song();
+        shouldRender = true;
+    } else if (keyEvent.keyCode == KEY_BACKSPACE) {
+        restart_current_song();
+        shouldRender = true;
     } else if (keyEvent.keyCode == KEY_MINUS) {
         adjust_volume(-VOLUME_STEP_PERCENT);
         shouldRender = true;
@@ -306,6 +312,62 @@ void AppMp3Player::play_selected_file()
     }
 
     _status_message = "Play failed: " + errorMessage;
+}
+
+void AppMp3Player::stop_current_song()
+{
+    if (!playback().isPlaying()) {
+        _status_message = "No song playing";
+        return;
+    }
+
+    _stop_requested = true;
+    playback().stop();
+    _status_message = "Playback stopped";
+}
+
+void AppMp3Player::restart_current_song()
+{
+    const std::string path = playback().getActivePath();
+    if (path.empty()) {
+        _status_message = "No active song";
+        return;
+    }
+
+    std::string errorMessage;
+    if (!playback().playFile(path, errorMessage)) {
+        _status_message = "Restart failed: " + errorMessage;
+        return;
+    }
+
+    _stop_requested = false;
+    _status_message = "Playing " + make_display_name(path);
+    sync_browser_to_active_track();
+}
+
+void AppMp3Player::sync_browser_to_active_track()
+{
+    if (_browser == nullptr) {
+        return;
+    }
+
+    const std::string activePath = playback().getActivePath();
+    if (activePath.empty()) {
+        refresh_browser();
+        return;
+    }
+
+    std::string errorMessage;
+    if (!_browser->focusPath(activePath, errorMessage)) {
+        refresh_browser();
+        if (_status_message.empty()) {
+            _status_message = "Browse failed: " + errorMessage;
+        }
+        return;
+    }
+
+    _status_message = "Playing " + make_display_name(activePath);
+    _browser->setStatusMessage(_status_message);
 }
 
 int AppMp3Player::get_volume_percent() const

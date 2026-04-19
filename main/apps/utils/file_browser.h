@@ -35,6 +35,7 @@ public:
     const FileEntry* getSelectedEntry() const;
     const FileEntry* getEntry(std::size_t index) const;
     bool enterSelectedDirectory(std::string& errorMessage);
+    bool focusPath(const std::string& path, std::string& errorMessage);
 
     std::size_t getEntryCount() const;
     std::size_t getSelectedIndex() const;

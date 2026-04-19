@@ -42,6 +42,9 @@ private:
     void handle_player_event(audio_player_callback_event_t event);
     void adjust_volume(int percentDelta);
     void play_selected_file();
+    void stop_current_song();
+    void restart_current_song();
+    void sync_browser_to_active_track();
     int get_volume_percent() const;
     AppMp3PlaybackService& playback();
     const AppMp3PlaybackService& playback() const;

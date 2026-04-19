@@ -133,6 +133,24 @@ bool SdFileBrowser::enterSelectedDirectory(std::string& errorMessage)
     return refreshInternal(std::string(), errorMessage);
 }
 
+bool SdFileBrowser::focusPath(const std::string& path, std::string& errorMessage)
+{
+    if (path.empty()) {
+        errorMessage = "path is empty";
+        return false;
+    }
+
+    const std::size_t separator = path.find_last_of('/');
+    if (separator == std::string::npos) {
+        errorMessage = "invalid path";
+        return false;
+    }
+
+    const std::string directoryPath = (separator == 0) ? std::string(ROOT_PATH) : path.substr(0, separator);
+    _current_path                   = directoryPath.empty() ? std::string(ROOT_PATH) : directoryPath;
+    return refreshInternal(path, errorMessage);
+}
+
 std::size_t SdFileBrowser::getEntryCount() const
 {
     return _entries.size();
