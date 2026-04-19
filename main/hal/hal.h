@@ -104,6 +104,7 @@ public:
     {
         return _speaker_volume;
     }
+    bool beginSpeakerOutput();
     bool setSpeakerVolume(int32_t volume);
     uint8_t getScaledSpeakerVolume(float scale) const;
     void applyScaledSpeakerVolume(float scale);

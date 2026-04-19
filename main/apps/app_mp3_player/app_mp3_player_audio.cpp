@@ -308,7 +308,7 @@ void AppMp3PlayerAudio::prepareSpeaker()
 
     _speaker_was_running = GetHAL().speaker.isRunning();
     if (!_speaker_was_running) {
-        GetHAL().speaker.begin();
+        GetHAL().beginSpeakerOutput();
     }
     GetHAL().speaker.stop(SPEAKER_CHANNEL);
 }

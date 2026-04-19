@@ -80,7 +80,7 @@ void AppRecord::onClose()
     // Cleanup audio devices
     if (audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
         GetHAL().mic.end();
-        GetHAL().speaker.begin();
+        GetHAL().beginSpeakerOutput();
         GetHAL().applyScaledSpeakerVolume(1.0f);
         audio::release_speaker(audio::SpeakerOwner::Recorder);
     }
@@ -145,7 +145,7 @@ bool AppRecord::start_playback()
     }
 
     GetHAL().mic.end();
-    GetHAL().speaker.begin();
+    GetHAL().beginSpeakerOutput();
     GetHAL().applyScaledSpeakerVolume(1.0f);
 
     render_page_playing();

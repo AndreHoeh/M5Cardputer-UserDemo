@@ -12,7 +12,8 @@
 #include <memory>
 
 namespace {
-constexpr char kHalTag[] = "HAL";
+constexpr char kHalTag[]                   = "HAL";
+constexpr std::size_t kSpeakerWarmupFrames = 128;
 
 std::unique_ptr<Hal> s_hal_instance;
 }  // namespace
@@ -32,7 +33,7 @@ void Hal::init()
 
     M5.begin();
     M5.Display.setBrightness(0);
-    M5.Speaker.begin();
+    beginSpeakerOutput();
 
     display_init();
     i2c_scan();
@@ -57,6 +58,34 @@ void Hal::update()
 void Hal::feedTheDog()
 {
     vTaskDelay(1);
+}
+
+// play silence to wake up the speaker amplifier, then stop immediately to avoid audible noise (trying to avoid a click
+// sound as much as possible)
+bool Hal::beginSpeakerOutput()
+{
+    const bool wasRunning = speaker.isRunning();
+    if (!wasRunning && !speaker.begin()) {
+        mclog::tagWarn(kHalTag, "speaker begin failed");
+        return false;
+    }
+
+    if (wasRunning) {
+        return true;
+    }
+
+    const uint8_t physicalVolumeBefore = speaker.getVolume();
+    const auto cfg                     = speaker.config();
+    const bool stereo                  = cfg.stereo || cfg.buzzer;
+    static std::array<int16_t, kSpeakerWarmupFrames * 2> silence{};
+
+    speaker.setVolume(0);
+    speaker.playRaw(silence.data(), stereo ? silence.size() : kSpeakerWarmupFrames, cfg.sample_rate, stereo, 1, -1,
+                    true);
+    delay(4);
+    speaker.stop();
+    speaker.setVolume(physicalVolumeBefore);
+    return true;
 }
 
 bool Hal::setSpeakerVolume(int32_t volume)
