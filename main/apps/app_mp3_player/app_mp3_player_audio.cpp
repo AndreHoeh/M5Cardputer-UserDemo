@@ -104,15 +104,23 @@ bool AppMp3PlayerAudio::playFile(const std::string& path, std::string& errorMess
         return false;
     }
 
+    const bool wasPlaying      = isPlaying();
     const bool speakerAcquired = audio::try_acquire_speaker(audio::SpeakerOwner::Mp3Playback);
     if (!speakerAcquired) {
         errorMessage = std::string("audio busy: ") + audio::describe_speaker_owner(audio::current_speaker_owner());
         return false;
     }
 
+    if (!wasPlaying) {
+        captureSpeakerVolumeForPlayback();
+    }
+
     FILE* file = fopen(path.c_str(), "rb");
     if (file == nullptr) {
         audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
+        if (!wasPlaying) {
+            restoreSpeakerVolumeAfterPlayback();
+        }
         errorMessage = std::strerror(errno);
         return false;
     }
@@ -122,6 +130,9 @@ bool AppMp3PlayerAudio::playFile(const std::string& path, std::string& errorMess
     if (err != ESP_OK) {
         fclose(file);
         audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
+        if (!wasPlaying) {
+            restoreSpeakerVolumeAfterPlayback();
+        }
         errorMessage = "play request failed";
         return false;
     }
@@ -183,6 +194,7 @@ void AppMp3PlayerAudio::handleAudioEvent(audio_player_cb_ctx_t* ctx)
         ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN ||
         ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE) {
         audio::release_speaker(audio::SpeakerOwner::Mp3Playback);
+        self->restoreSpeakerVolumeAfterPlayback();
         audio::set_speaker_sfx_suppressed(false);
     }
 }
@@ -301,8 +313,29 @@ void AppMp3PlayerAudio::prepareSpeaker()
     GetHAL().speaker.stop(SPEAKER_CHANNEL);
 }
 
+void AppMp3PlayerAudio::captureSpeakerVolumeForPlayback()
+{
+    if (_speaker_volume_saved) {
+        return;
+    }
+
+    _speaker_volume_before = GetHAL().getSpeakerVolume();
+    _speaker_volume_saved  = true;
+}
+
+void AppMp3PlayerAudio::restoreSpeakerVolumeAfterPlayback()
+{
+    if (!_speaker_volume_saved) {
+        return;
+    }
+
+    GetHAL().setSpeakerVolume(_speaker_volume_before);
+    _speaker_volume_saved = false;
+}
+
 void AppMp3PlayerAudio::restoreSpeaker()
 {
+    restoreSpeakerVolumeAfterPlayback();
     GetHAL().speaker.stop(SPEAKER_CHANNEL);
     if (!_speaker_was_running) {
         GetHAL().speaker.end();

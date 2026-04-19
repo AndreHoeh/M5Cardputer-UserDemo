@@ -51,8 +51,10 @@ private:
     std::atomic<int> _last_event{AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN};
     std::string _active_path;
     WriteContext _write_context;
-    bool _speaker_was_running = false;
-    bool _started             = false;
+    uint8_t _speaker_volume_before = 0;
+    bool _speaker_was_running      = false;
+    bool _speaker_volume_saved     = false;
+    bool _started                  = false;
 
     static void handleAudioEvent(audio_player_cb_ctx_t* ctx);
     static esp_err_t muteCallback(AUDIO_PLAYER_MUTE_SETTING setting);
@@ -62,6 +64,8 @@ private:
 
     esp_err_t onClockConfig(std::uint32_t rate, std::uint32_t bitsCfg, i2s_slot_mode_t ch);
     esp_err_t onWrite(void* audioBuffer, size_t len, size_t* bytesWritten, std::uint32_t timeoutMs);
+    void captureSpeakerVolumeForPlayback();
+    void restoreSpeakerVolumeAfterPlayback();
     void prepareSpeaker();
     void restoreSpeaker();
 };
