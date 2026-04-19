@@ -19,4 +19,8 @@ void play_random_tone(int semitoneShift = 48, double durationSec = 0.02);
 
 void set_keyboard_sfx_enable(bool enable);
 
+void set_speaker_sfx_suppressed(bool suppressed);
+
+bool is_speaker_sfx_suppressed();
+
 }  // namespace audio

@@ -5,6 +5,7 @@
  */
 #include "app_mp3_player_audio.h"
 
+#include <apps/utils/audio/audio.h>
 #include <hal.h>
 #include <mooncake_log.h>
 
@@ -88,6 +89,7 @@ void AppMp3PlayerAudio::end()
 
     stop();
     audio_player_delete();
+    audio::set_speaker_sfx_suppressed(false);
     g_active_audio = nullptr;
     _active_path.clear();
     _started = false;
@@ -116,6 +118,7 @@ bool AppMp3PlayerAudio::playFile(const std::string& path, std::string& errorMess
     }
 
     _active_path = path;
+    audio::set_speaker_sfx_suppressed(true);
     return true;
 }
 
@@ -166,6 +169,12 @@ void AppMp3PlayerAudio::handleAudioEvent(audio_player_cb_ctx_t* ctx)
 
     auto* self = static_cast<AppMp3PlayerAudio*>(ctx->user_ctx);
     self->_last_event.store(ctx->audio_event);
+
+    if (ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE ||
+        ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN ||
+        ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE) {
+        audio::set_speaker_sfx_suppressed(false);
+    }
 }
 
 esp_err_t AppMp3PlayerAudio::muteCallback(AUDIO_PLAYER_MUTE_SETTING setting)

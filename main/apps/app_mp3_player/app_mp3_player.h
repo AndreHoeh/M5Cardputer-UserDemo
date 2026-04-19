@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include "app_mp3_player_audio.h"
+#include "app_mp3_playback_service.h"
 #include "utils/file_browser.h"
 
 #include <cstdint>
@@ -29,7 +29,6 @@ private:
     static constexpr int VOLUME_STEP_PERCENT = 10;
 
     std::unique_ptr<SdFileBrowser> _browser;
-    std::unique_ptr<AppMp3PlayerAudio> _audio;
     int _key_event_slot_id = -1;
     bool _stop_requested   = false;
     std::string _status_message;
@@ -44,6 +43,8 @@ private:
     void adjust_volume(int percentDelta);
     void play_selected_file();
     int get_volume_percent() const;
+    AppMp3PlaybackService& playback();
+    const AppMp3PlaybackService& playback() const;
     std::string make_display_name(const std::string& path) const;
     std::string truncate_text(const std::string& value, std::size_t maxLength) const;
 };

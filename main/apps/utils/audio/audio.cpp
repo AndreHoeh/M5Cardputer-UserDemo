@@ -8,17 +8,22 @@
 #include <cstdlib>
 #include <cstdint>
 #include <algorithm>
+#include <atomic>
 #include "esp_random.h"
 #include <hal/hal.h>
 #include <mooncake_log.h>
 
 namespace audio {
 
+namespace {
+std::atomic<bool> g_speaker_sfx_suppressed{false};
+}
+
 const int c_major_scale[] = {60, 62, 64, 65, 67, 69, 71};  // C大调音阶（C D E F G A B）
 
 void play_tone(int frequency, double durationSec)
 {
-    if (GetHAL().getSpeakerVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
         return;
     }
 
@@ -48,7 +53,7 @@ void play_tone(int frequency, double durationSec)
 
 void play_melody(const std::vector<int>& midiList, double durationSec = 0.1)
 {
-    if (GetHAL().getSpeakerVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
         return;
     }
 
@@ -86,7 +91,7 @@ void play_melody(const std::vector<int>& midiList, double durationSec = 0.1)
 
 void play_tone_from_midi(int midi, double durationSec)
 {
-    if (GetHAL().getSpeakerVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
         return;
     }
 
@@ -96,7 +101,7 @@ void play_tone_from_midi(int midi, double durationSec)
 
 void play_random_tone(int semitoneShift = 0, double durationSec = 0.15)
 {
-    if (GetHAL().getSpeakerVolume() <= 0) {
+    if (GetHAL().getSpeakerVolume() <= 0 || g_speaker_sfx_suppressed.load()) {
         return;
     }
 
@@ -112,7 +117,7 @@ void play_random_tone(int semitoneShift = 0, double durationSec = 0.15)
 /* -------------------------------------------------------------------------- */
 static void _keyboard_sfx_on_key_event(const Keyboard::KeyEvent_t& event)
 {
-    if (!event.state) {
+    if (!event.state || g_speaker_sfx_suppressed.load()) {
         return;
     }
 
@@ -165,6 +170,16 @@ void set_keyboard_sfx_enable(bool enable)
         is_enabled = false;
         GetHAL().keyboard.onKeyEvent.disconnect(slot_id);
     }
+}
+
+void set_speaker_sfx_suppressed(bool suppressed)
+{
+    g_speaker_sfx_suppressed.store(suppressed);
+}
+
+bool is_speaker_sfx_suppressed()
+{
+    return g_speaker_sfx_suppressed.load();
 }
 
 }  // namespace audio

@@ -34,7 +34,6 @@ void AppMp3Player::onOpen()
     mclog::tagInfo(getAppInfo().name, "on open");
 
     _browser = std::make_unique<SdFileBrowser>();
-    _audio   = std::make_unique<AppMp3PlayerAudio>();
     _browser->setExtensionFilter(".mp3");
     _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
         [this](const Keyboard::KeyEvent_t& keyEvent) { handle_key_event(keyEvent); });
@@ -49,17 +48,27 @@ void AppMp3Player::onOpen()
 
     update_viewport_metrics();
     refresh_browser();
-    if (!_audio->begin()) {
+    if (!playback().begin()) {
         _status_message = "Audio init failed";
     }
-    render();
+
+    bool rendered                                    = false;
+    const audio_player_callback_event_t initialEvent = playback().consumeLastEvent();
+    if (initialEvent != AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN) {
+        handle_player_event(initialEvent);
+        rendered = true;
+    } else if (playback().isPlaying() && !playback().getActivePath().empty()) {
+        _status_message = "Playing " + make_display_name(playback().getActivePath());
+    }
+
+    if (!rendered) {
+        render();
+    }
 }
 
 void AppMp3Player::onRunning()
 {
-    if (_audio) {
-        handle_player_event(_audio->consumeLastEvent());
-    }
+    handle_player_event(playback().consumeLastEvent());
 
     if (is_app_exit_requested()) {
         close();
@@ -73,11 +82,6 @@ void AppMp3Player::onClose()
     if (_key_event_slot_id >= 0) {
         GetHAL().keyboard.onKeyEvent.disconnect(_key_event_slot_id);
         _key_event_slot_id = -1;
-    }
-
-    if (_audio) {
-        _audio->end();
-        _audio.reset();
     }
     _browser.reset();
 
@@ -153,7 +157,7 @@ void AppMp3Player::render_browser()
     }
 
     const std::size_t firstIndex = _browser->getFirstVisibleIndex();
-    const std::string activePath = _audio ? _audio->getActivePath() : std::string();
+    const std::string activePath = playback().getActivePath();
     const std::size_t maxColumns = static_cast<std::size_t>(GetHAL().canvas.width() / FONT_REPL_WIDTH);
     for (std::size_t row = 0; row < _browser->getViewportRows(); ++row) {
         const std::size_t entryIndex = firstIndex + row;
@@ -219,7 +223,7 @@ void AppMp3Player::handle_player_event(audio_player_callback_event_t event)
     }
 
     if (event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
-        _audio->clearActivePath();
+        playback().clearActivePath();
         if (_stop_requested) {
             _status_message = "Playback stopped";
             _stop_requested = false;
@@ -228,17 +232,17 @@ void AppMp3Player::handle_player_event(audio_player_callback_event_t event)
         }
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PLAYING) {
         _stop_requested = false;
-        _status_message = "Playing " + make_display_name(_audio->getActivePath());
+        _status_message = "Playing " + make_display_name(playback().getActivePath());
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_COMPLETED_PLAYING_NEXT) {
         _stop_requested = false;
-        _status_message = "Playing " + make_display_name(_audio->getActivePath());
+        _status_message = "Playing " + make_display_name(playback().getActivePath());
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_PAUSE) {
         _status_message = "Paused";
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_UNKNOWN_FILE_TYPE) {
-        _audio->clearActivePath();
+        playback().clearActivePath();
         _status_message = "Unsupported audio file";
     } else if (event == AUDIO_PLAYER_CALLBACK_EVENT_SHUTDOWN) {
-        _audio->clearActivePath();
+        playback().clearActivePath();
         _status_message = "Audio stopped";
     }
 
@@ -261,7 +265,7 @@ void AppMp3Player::adjust_volume(int percentDelta)
 
 void AppMp3Player::play_selected_file()
 {
-    if (_browser == nullptr || _audio == nullptr) {
+    if (_browser == nullptr) {
         return;
     }
 
@@ -287,16 +291,15 @@ void AppMp3Player::play_selected_file()
         return;
     }
 
-    if (_audio->isPlaying() && entry->path == _audio->getActivePath()) {
+    if (playback().isPlaying() && entry->path == playback().getActivePath()) {
         _stop_requested = true;
-        _audio->stop();
-        _audio->clearActivePath();
+        playback().stop();
         _status_message = "Playback stopped";
         return;
     }
 
     std::string errorMessage;
-    if (_audio->playFile(entry->path, errorMessage)) {
+    if (playback().playFile(entry->path, errorMessage)) {
         _stop_requested = false;
         _status_message = "Playing " + entry->name;
         return;
@@ -309,6 +312,16 @@ int AppMp3Player::get_volume_percent() const
 {
     const int volume = GetHAL().getSpeakerVolume();
     return std::clamp((volume * 100 + 127) / 255, 0, 100);
+}
+
+AppMp3PlaybackService& AppMp3Player::playback()
+{
+    return AppMp3PlaybackService::instance();
+}
+
+const AppMp3PlaybackService& AppMp3Player::playback() const
+{
+    return AppMp3PlaybackService::instance();
 }
 
 std::string AppMp3Player::make_display_name(const std::string& path) const
