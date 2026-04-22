@@ -13,12 +13,48 @@
 #include <sys/stat.h>
 
 namespace {
-std::string to_lower_copy(const std::string& value)
+void normalize_lower_in_place(std::string& value)
 {
-    std::string lowered = value;
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+    std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    return lowered;
+}
+
+bool ends_with_ignore_case(const std::string& value, const std::string& suffix)
+{
+    if (value.size() < suffix.size()) {
+        return false;
+    }
+
+    const std::size_t offset = value.size() - suffix.size();
+    for (std::size_t index = 0; index < suffix.size(); ++index) {
+        const unsigned char valueChar  = static_cast<unsigned char>(value[offset + index]);
+        const unsigned char suffixChar = static_cast<unsigned char>(suffix[index]);
+        if (std::tolower(valueChar) != std::tolower(suffixChar)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool comes_before_ignore_case(const std::string& left, const std::string& right)
+{
+    const std::size_t compareLength = std::min(left.size(), right.size());
+    for (std::size_t index = 0; index < compareLength; ++index) {
+        const unsigned char leftChar  = static_cast<unsigned char>(left[index]);
+        const unsigned char rightChar = static_cast<unsigned char>(right[index]);
+        const int leftLower           = std::tolower(leftChar);
+        const int rightLower          = std::tolower(rightChar);
+        if (leftLower != rightLower) {
+            return leftLower < rightLower;
+        }
+    }
+
+    if (left.size() == right.size()) {
+        return left < right;
+    }
+
+    return left.size() < right.size();
 }
 
 std::string parent_path(const std::string& path)
@@ -61,14 +97,31 @@ void SdFileBrowser::setViewportRows(std::size_t rows)
     ensureSelectionVisible();
 }
 
-void SdFileBrowser::setExtensionFilter(std::string extension)
+void SdFileBrowser::setExtensionFilter(std::string_view extension)
 {
-    _extension_filter = to_lower_copy(extension);
+    setExtensionFilters({extension});
 }
 
-const std::string& SdFileBrowser::getExtensionFilter() const
+void SdFileBrowser::setExtensionFilters(std::initializer_list<std::string_view> extensions)
 {
-    return _extension_filter;
+    for (std::string& extension : _extension_filters) {
+        extension.clear();
+    }
+
+    _extension_filter_count = 0;
+    for (std::string_view extension : extensions) {
+        if (extension.empty()) {
+            continue;
+        }
+
+        if (_extension_filter_count >= _extension_filters.size()) {
+            break;
+        }
+
+        _extension_filters[_extension_filter_count] = extension;
+        normalize_lower_in_place(_extension_filters[_extension_filter_count]);
+        ++_extension_filter_count;
+    }
 }
 
 bool SdFileBrowser::moveUp()
@@ -206,16 +259,17 @@ std::string SdFileBrowser::buildPath(const std::string& directoryPath, const std
 
 bool SdFileBrowser::matchesExtension(const std::string& fileName) const
 {
-    if (_extension_filter.empty()) {
+    if (_extension_filter_count == 0) {
         return true;
     }
 
-    const std::string lowered = to_lower_copy(fileName);
-    if (lowered.size() < _extension_filter.size()) {
-        return false;
+    for (std::uint8_t index = 0; index < _extension_filter_count; ++index) {
+        if (ends_with_ignore_case(fileName, _extension_filters[index])) {
+            return true;
+        }
     }
 
-    return lowered.compare(lowered.size() - _extension_filter.size(), _extension_filter.size(), _extension_filter) == 0;
+    return false;
 }
 
 bool SdFileBrowser::refreshInternal(const std::string& preferredPath, std::string& errorMessage)
@@ -271,19 +325,14 @@ bool SdFileBrowser::refreshInternal(const std::string& preferredPath, std::strin
             return left.is_directory;
         }
 
-        const std::string leftName  = to_lower_copy(left.name);
-        const std::string rightName = to_lower_copy(right.name);
-        if (leftName == rightName) {
-            return left.name < right.name;
-        }
-        return leftName < rightName;
+        return comes_before_ignore_case(left.name, right.name);
     });
 
     _entries = std::move(entries);
     if (_entries.empty()) {
         _selected_index = 0;
         _first_visible  = 0;
-        if (_extension_filter.empty()) {
+        if (_extension_filter_count == 0) {
             _status_message = "No files in " + _current_path;
         } else {
             _status_message = "No matching files in " + _current_path;

@@ -5,8 +5,12 @@
  */
 #pragma once
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <initializer_list>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class SdFileBrowser {
@@ -18,15 +22,16 @@ public:
         bool is_parent    = false;
     };
 
-    static constexpr const char* ROOT_PATH = "/sd";
+    static constexpr const char* ROOT_PATH             = "/sd";
+    static constexpr std::size_t MAX_EXTENSION_FILTERS = 4;
 
     SdFileBrowser();
 
     void clear();
     bool refresh(std::string& errorMessage);
     void setViewportRows(std::size_t rows);
-    void setExtensionFilter(std::string extension);
-    const std::string& getExtensionFilter() const;
+    void setExtensionFilter(std::string_view extension);
+    void setExtensionFilters(std::initializer_list<std::string_view> extensions);
 
     bool moveUp();
     bool moveDown();
@@ -56,7 +61,8 @@ private:
     std::size_t _viewport_rows  = 1;
     std::string _current_path   = ROOT_PATH;
     std::string _status_message;
-    std::string _extension_filter;
+    std::array<std::string, MAX_EXTENSION_FILTERS> _extension_filters;
+    std::uint8_t _extension_filter_count = 0;
 
     bool matchesExtension(const std::string& fileName) const;
     bool refreshInternal(const std::string& preferredPath, std::string& errorMessage);

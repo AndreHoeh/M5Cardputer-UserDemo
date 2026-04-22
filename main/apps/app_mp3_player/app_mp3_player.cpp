@@ -20,7 +20,7 @@ using namespace mooncake;
 
 AppMp3Player::AppMp3Player()
 {
-    setAppInfo().name     = "MP3";
+    setAppInfo().name     = "Audio";
     setAppInfo().userData = new AppIcon_t(image_data_tf_big, image_data_tf_small, false);
 }
 
@@ -34,7 +34,7 @@ void AppMp3Player::onOpen()
     mclog::tagInfo(getAppInfo().name, "on open");
 
     _browser = std::make_unique<SdFileBrowser>();
-    _browser->setExtensionFilter(".mp3");
+    _browser->setExtensionFilters({".mp3", ".wav"});
     _key_event_slot_id = GetHAL().keyboard.onKeyEvent.connect(
         [this](const Keyboard::KeyEvent_t& keyEvent) { handle_key_event(keyEvent); });
     _stop_requested = false;
@@ -107,7 +107,7 @@ void AppMp3Player::refresh_browser()
     }
 
     if (_browser->getEntryCount() == 0) {
-        _status_message = "No MP3 files in " + _browser->getCurrentPath();
+        _status_message = "No audio files in " + _browser->getCurrentPath();
     } else {
         _status_message = "Enter Play  ;/. Move";
     }
@@ -138,7 +138,7 @@ void AppMp3Player::render_status_bar()
     GetHAL().canvas.setFont(FONT_SMALL);
     GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
     GetHAL().canvas.drawString(
-        truncate_text("MP3 " + (_browser ? _browser->getCurrentPath() : std::string(SdFileBrowser::ROOT_PATH)), 36)
+        truncate_text("Audio " + (_browser ? _browser->getCurrentPath() : std::string(SdFileBrowser::ROOT_PATH)), 36)
             .c_str(),
         0, 0);
 
@@ -152,7 +152,7 @@ void AppMp3Player::render_browser()
 
     if (_browser == nullptr || _browser->getEntryCount() == 0) {
         GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
-        GetHAL().canvas.drawString("(no mp3 files)", 0, STATUS_BAR_HEIGHT);
+        GetHAL().canvas.drawString("(no audio files)", 0, STATUS_BAR_HEIGHT);
         return;
     }
 
@@ -284,7 +284,7 @@ void AppMp3Player::play_selected_file()
 
     const auto* entry = _browser->getSelectedEntry();
     if (entry == nullptr) {
-        _status_message = "No MP3 file selected";
+        _status_message = "No audio file selected";
         return;
     }
 
@@ -296,7 +296,7 @@ void AppMp3Player::play_selected_file()
         }
 
         if (_browser->getEntryCount() == 0) {
-            _status_message = "No MP3 files in " + _browser->getCurrentPath();
+            _status_message = "No audio files in " + _browser->getCurrentPath();
         } else {
             _status_message = "Enter Play  ;/. Move";
         }
