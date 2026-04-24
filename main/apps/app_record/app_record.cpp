@@ -27,6 +27,9 @@ namespace {
 constexpr char kRecordingsDir[]    = "/sd/recordings";
 constexpr char kRecordGainKey[]    = "record_gain";
 constexpr char kRecordCounterKey[] = "rec_count";
+constexpr uint8_t kEs8311Address   = 0x18;
+constexpr uint8_t kEs8311AdcVolReg = 0x17;
+constexpr uint8_t kEs8311AdcVolMax = 0xFF;
 constexpr int kWaveformLeft        = 10;
 constexpr int kTitleTop            = 2;
 constexpr int kTitleHeight         = FONT_REPL_HEIGHT;
@@ -46,6 +49,15 @@ void write_u32_le(uint8_t* dst, uint32_t value)
     dst[1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
     dst[2] = static_cast<uint8_t>((value >> 16) & 0xFFu);
     dst[3] = static_cast<uint8_t>((value >> 24) & 0xFFu);
+}
+
+void apply_cardputer_adv_recording_codec_gain()
+{
+    if (M5.getBoard() != m5::board_t::board_M5CardputerADV) {
+        return;
+    }
+
+    M5.In_I2C.writeRegister8(kEs8311Address, kEs8311AdcVolReg, kEs8311AdcVolMax, 400000);
 }
 }  // namespace
 
@@ -132,6 +144,7 @@ bool AppRecord::start_recording()
     cfg.noise_filter_level = 0;
     GetHAL().mic.config(cfg);
     GetHAL().mic.begin();
+    apply_cardputer_adv_recording_codec_gain();
 
     _record_start_ms    = GetHAL().millis();
     _last_flush_ms      = _record_start_ms;
