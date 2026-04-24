@@ -65,6 +65,17 @@ bool apply_display_brightness_config(Hal& hal, int32_t value, size_t, const std:
     return hal.setDisplayBrightness(value);
 }
 
+bool apply_record_gain_config(Hal& hal, int32_t value, size_t line_number, const std::string& logTag)
+{
+    if (value < 16 || value > 255) {
+        mclog::tagWarn(logTag, "reject invalid record gain on line {}: {}", line_number, value);
+        return false;
+    }
+
+    hal.getSettings().SetInt("record_gain", value);
+    return true;
+}
+
 bool apply_idle_sleep_timeout_config(Hal& hal, int32_t value, size_t line_number, const std::string& logTag)
 {
     if (value < 0) {
@@ -80,9 +91,10 @@ struct SettingsConfigHandlerEntry {
     bool (*apply)(Hal& hal, int32_t value, size_t line_number, const std::string& logTag);
 };
 
-constexpr std::array<SettingsConfigHandlerEntry, 3> SETTINGS_CONFIG_HANDLERS = {{
+constexpr std::array<SettingsConfigHandlerEntry, 4> SETTINGS_CONFIG_HANDLERS = {{
     {"speaker_volume", &apply_speaker_volume_config},
     {"display_brightness", &apply_display_brightness_config},
+    {"record_gain", &apply_record_gain_config},
     {"idle_sleep_timeout_ms", &apply_idle_sleep_timeout_config},
 }};
 

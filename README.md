@@ -28,7 +28,7 @@ idf.py flash
 
 ## SD Settings Config
 
-System settings can be overridden at boot from `/sdcard/settings.conf`.
+System settings can be overridden at boot from `/sd/settings.conf`.
 
 The config is loaded during launcher startup, after the boot animation path has finished, instead of during early HAL initialization.
 
@@ -45,17 +45,31 @@ Supported keys:
 - `config_version=1`
 - `speaker_volume=0..255`
 - `display_brightness=0..255`
+- `record_gain=16..255`
 - `idle_sleep_timeout_ms=0..3600000`
 
 Example:
 
 ```conf
-# /sdcard/settings.conf
+# /sd/settings.conf
 config_version=1
 speaker_volume=30
 display_brightness=200
+record_gain=128
 idle_sleep_timeout_ms=60000
 ```
+
+## Recorder App
+
+The recorder app now writes new recordings directly to WAV files on the SD card instead of keeping only a short RAM buffer.
+
+- Output path: `/sd/recordings`
+- Format: mono PCM WAV, 16-bit, 16 kHz
+- Behavior: opening the app starts a new recording immediately when SD storage and audio ownership are available
+- Controls: `Enter` stops or starts recording, `,` and `/` adjust microphone gain for future recordings
+- Playback: use the existing SD audio player app to play the saved WAV files
+
+If system time is valid, recordings use timestamped filenames. Otherwise the recorder falls back to a persistent counter-based filename.
 
 ## Acknowledgments
 

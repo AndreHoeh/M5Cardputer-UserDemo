@@ -10,27 +10,54 @@
 #include <apps/utils/audio/speaker_arbiter.h>
 #include <apps/utils/common.h>
 #include <apps/utils/theme.h>
-#include <mooncake_log.h>
 #include <assets.h>
+#include <mooncake_log.h>
 
-#include <new>
+#include <algorithm>
+#include <cerrno>
+#include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <sys/stat.h>
 
 using namespace mooncake;
+
+namespace {
+constexpr char kRecordingsDir[]    = "/sd/recordings";
+constexpr char kRecordGainKey[]    = "record_gain";
+constexpr char kRecordCounterKey[] = "rec_count";
+constexpr int kWaveformLeft        = 10;
+constexpr int kTitleTop            = 2;
+constexpr int kTitleHeight         = FONT_REPL_HEIGHT;
+constexpr int kSmallLineHeight     = 8;
+constexpr int kHeaderGap           = 2;
+constexpr int kWaveformTop         = 68;
+
+void write_u16_le(uint8_t* dst, uint16_t value)
+{
+    dst[0] = static_cast<uint8_t>(value & 0xFFu);
+    dst[1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
+}
+
+void write_u32_le(uint8_t* dst, uint32_t value)
+{
+    dst[0] = static_cast<uint8_t>(value & 0xFFu);
+    dst[1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
+    dst[2] = static_cast<uint8_t>((value >> 16) & 0xFFu);
+    dst[3] = static_cast<uint8_t>((value >> 24) & 0xFFu);
+}
+}  // namespace
 
 AppRecord::AppRecord()
 {
     setAppInfo().name     = "Record";
-    setAppInfo().userData = new AppIcon_t(image_data_record_big, image_data_record_small);
+    setAppInfo().userData = new AppIcon_t(image_data_record_big, image_data_record_small, false);
 }
 
 AppRecord::~AppRecord()
 {
     delete static_cast<AppIcon_t*>(getAppInfo().userData);
-    if (_rec_data) {
-        delete[] _rec_data;
-        _rec_data = nullptr;
-    }
 }
 
 void AppRecord::onOpen()
@@ -38,32 +65,25 @@ void AppRecord::onOpen()
     mclog::tagInfo(getAppInfo().name, "on open");
 
     audio::set_keyboard_sfx_enable(false);
-
+    _record_gain = load_record_gain();
     clear_status_message();
-
-    if (!start_recording()) {
-        render_page_message(_status_message.data());
-    }
+    render_page();
 }
 
 void AppRecord::onRunning()
 {
-    if (_is_recording && GetHAL().mic.isEnabled()) {
-        render_waveform();
+    const auto key_event = GetHAL().keyboard.getLatestKeyEvent();
+    if (key_event.state) {
+        handle_key_event(key_event);
     }
 
-    // Handle keyboard input
-    auto key_event = GetHAL().keyboard.getLatestKeyEvent();
-    if (key_event.state == true) {
-        if (key_event.keyCode == KEY_ENTER) {
-            handle_enter_key();
+    if (_is_recording && GetHAL().mic.isEnabled()) {
+        if (!handle_record_chunk()) {
+            stop_recording("Recording stopped");
         }
     }
 
-    // Close app when home button clicked
     if (is_app_exit_requested()) {
-        // GetHAL().speaker.setVolume(90);
-        // audio::play_random_tone();
         close();
     }
 }
@@ -72,218 +92,417 @@ void AppRecord::onClose()
 {
     mclog::tagInfo(getAppInfo().name, "on close");
 
-    // Stop recording if active
-    while (GetHAL().mic.isRecording()) {
-        GetHAL().delay(1);
-    }
-
-    // Cleanup audio devices
-    if (audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
-        GetHAL().mic.end();
-        GetHAL().beginSpeakerOutput();
-        GetHAL().applyScaledSpeakerVolume(1.0f);
-        audio::release_speaker(audio::SpeakerOwner::Recorder);
-    }
-
-    // Free memory
-    if (_rec_data) {
-        delete[] _rec_data;
-        _rec_data = nullptr;
-    }
-
+    stop_recording();
     audio::set_keyboard_sfx_enable(true);
 }
 
 bool AppRecord::start_recording()
 {
+    if (_is_recording) {
+        return true;
+    }
+
+    clear_status_message();
+
+    if (!GetHAL().ensureSdCardMounted()) {
+        set_status_message("Insert SD card to record");
+        render_page();
+        return false;
+    }
+
     if (!audio::try_acquire_speaker(audio::SpeakerOwner::Recorder)) {
-        _is_recording = false;
         set_audio_busy_status_message();
+        render_page();
         return false;
     }
 
-    if (!ensure_record_buffer()) {
-        _is_recording = false;
+    if (!ensure_recordings_directory() || !open_record_file()) {
         audio::release_speaker(audio::SpeakerOwner::Recorder);
+        GetHAL().beginSpeakerOutput();
+        GetHAL().applyScaledSpeakerVolume(1.0f);
+        render_page();
         return false;
     }
 
-    // Since microphone and speaker cannot be used at the same time, turn off speaker
     GetHAL().speaker.end();
     GetHAL().applyScaledSpeakerVolume(1.0f);
 
-    auto cfg = GetHAL().mic.config();
-    // cfg.over_sampling = 1;
-    cfg.magnification      = 128;
-    cfg.noise_filter_level = 2;
+    auto cfg               = GetHAL().mic.config();
+    cfg.magnification      = static_cast<std::uint8_t>(_record_gain);
+    cfg.noise_filter_level = 0;
     GetHAL().mic.config(cfg);
     GetHAL().mic.begin();
 
-    _is_recording = true;
-    clear_status_message();
-    render_page_recording();
+    _record_start_ms    = GetHAL().millis();
+    _last_flush_ms      = _record_start_ms;
+    _data_bytes_written = 0;
+    _last_peak_level    = 0;
+    _is_recording       = true;
+    render_page();
     return true;
 }
 
-bool AppRecord::start_playback()
+bool AppRecord::stop_recording(const char* status_message)
 {
-    if (!audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
-        set_audio_busy_status_message();
-        render_page_message(_status_message.data());
-        return false;
-    }
+    const bool was_recording = _is_recording;
+    _is_recording            = false;
 
-    if (_rec_data == nullptr) {
-        set_status_message("Recorder buffer unavailable");
-        render_page_message(_status_message.data());
-        return false;
-    }
-
-    // Stop recording and start playback
     while (GetHAL().mic.isRecording()) {
         GetHAL().delay(1);
     }
 
-    GetHAL().mic.end();
+    if (GetHAL().mic.isEnabled()) {
+        GetHAL().mic.end();
+    }
+
+    bool finalized_ok = true;
+    if (_record_file != nullptr) {
+        finalized_ok = finalize_record_file();
+    }
+
+    if (audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
+        audio::release_speaker(audio::SpeakerOwner::Recorder);
+    }
+
     GetHAL().beginSpeakerOutput();
     GetHAL().applyScaledSpeakerVolume(1.0f);
 
-    render_page_playing();
-
-    // Play recorded data
-    int start_pos = _rec_record_idx * RECORD_LENGTH;
-    if (start_pos < RECORD_SIZE) {
-        GetHAL().speaker.playRaw(&_rec_data[start_pos], RECORD_SIZE - start_pos, PLAYBACK_SAMPLERATE, false);
-    }
-    if (start_pos > 0) {
-        GetHAL().speaker.playRaw(_rec_data, start_pos, PLAYBACK_SAMPLERATE, false);
+    if (status_message != nullptr) {
+        set_status_message(status_message);
+    } else if (was_recording && finalized_ok) {
+        std::snprintf(_status_message.data(), _status_message.size(), "Saved %s", _current_file_name.data());
+    } else if (!finalized_ok && _status_message[0] == '\0') {
+        set_status_message("Failed to finalize WAV");
     }
 
-    // Wait for playback to finish
-    do {
-        GetHAL().delay(1);
-    } while (GetHAL().speaker.isPlaying());
+    render_page();
+    return finalized_ok;
+}
 
-    // Resume recording
-    start_recording();
-    render_page_recording();
+void AppRecord::render_page()
+{
+    GetHAL().canvas.fillScreen(THEME_COLOR_BG);
+    GetHAL().canvas.setTextSize(1);
+    GetHAL().canvas.setFont(FONT_REPL);
+
+    GetHAL().canvas.setTextColor(_is_recording ? TFT_RED : TFT_ORANGE, THEME_COLOR_BG);
+    GetHAL().canvas.setCursor(10, kTitleTop);
+    GetHAL().canvas.print(_is_recording ? "REC TO SD" : "RECORDER IDLE");
+    if (_is_recording && _last_peak_level >= RECORD_CLIP_THRESHOLD) {
+        GetHAL().canvas.setTextColor(TFT_YELLOW, THEME_COLOR_BG);
+        GetHAL().canvas.setCursor(GetHAL().canvas.width() - 44, kTitleTop);
+        GetHAL().canvas.print("CLIP");
+    }
+
+    GetHAL().canvas.setFont(FONT_SMALL);
+    GetHAL().canvas.setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    GetHAL().canvas.setCursor(10, kTitleTop + kTitleHeight + kHeaderGap);
+    GetHAL().canvas.print("Enter start/stop");
+
+    GetHAL().canvas.setCursor(10, kTitleTop + kTitleHeight + kHeaderGap + kSmallLineHeight + 2);
+    GetHAL().canvas.printf("Gain <- ->: %ld", static_cast<long>(_record_gain));
+
+    GetHAL().canvas.setFont(FONT_REPL);
+    GetHAL().canvas.setCursor(10, kTitleTop + kTitleHeight + kHeaderGap + kSmallLineHeight + 4);
+    if (_is_recording) {
+        const uint32_t elapsed_ms = GetHAL().millis() - _record_start_ms;
+        const uint32_t whole      = elapsed_ms / 1000;
+        const uint32_t tenths     = (elapsed_ms % 1000) / 100;
+        GetHAL().canvas.printf("%s  %lu.%lus", _current_file_name.data(), static_cast<unsigned long>(whole),
+                               static_cast<unsigned long>(tenths));
+    } else if (_current_file_name[0] != '\0') {
+        GetHAL().canvas.printf("Last: %s", _current_file_name.data());
+    } else {
+        GetHAL().canvas.print("No file yet");
+    }
+
+    render_waveform(kWaveformTop, GetHAL().canvas.height() - kWaveformTop - 24);
+
+    GetHAL().canvas.setCursor(10, GetHAL().canvas.height() - 10);
+    if (_status_message[0] != '\0') {
+        GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+        GetHAL().canvas.print(_status_message.data());
+    } else if (_is_recording) {
+        GetHAL().canvas.setTextColor(TFT_GREEN, THEME_COLOR_BG);
+        GetHAL().canvas.printf("Writing %lu bytes", static_cast<unsigned long>(_data_bytes_written));
+    } else {
+        GetHAL().canvas.setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        GetHAL().canvas.print("Use player app to play saved WAV");
+    }
+
+    GetHAL().pushCanvas();
+}
+
+void AppRecord::render_waveform(int32_t top, int32_t height)
+{
+    if (height <= 0) {
+        return;
+    }
+
+    const int32_t width =
+        std::min<int32_t>(GetHAL().canvas.width() - (kWaveformLeft * 2), static_cast<int32_t>(RECORD_CHUNK_SAMPLES));
+    if (width <= 0) {
+        return;
+    }
+
+    GetHAL().canvas.drawRect(kWaveformLeft - 1, top - 1, width + 2, height + 2, TFT_DARKGREY);
+
+    const int32_t center_y = top + (height / 2);
+    GetHAL().canvas.drawFastHLine(kWaveformLeft, center_y, width, TFT_DARKGREY);
+
+    for (int32_t x = 0; x < width; ++x) {
+        const size_t sample_index = static_cast<size_t>((static_cast<uint32_t>(x) * RECORD_CHUNK_SAMPLES) / width);
+        const int32_t sample      = static_cast<int32_t>(_record_chunk[sample_index]) / 512;
+        int32_t y                 = center_y - sample;
+        if (y < top) {
+            y = top;
+        }
+        if (y >= top + height) {
+            y = top + height - 1;
+        }
+        GetHAL().canvas.drawPixel(kWaveformLeft + x, y, TFT_WHITE);
+    }
+
+    const int32_t meter_width =
+        (_last_peak_level <= 0) ? 0 : std::max<int32_t>(1, (width * static_cast<int32_t>(_last_peak_level)) / 32767);
+    GetHAL().canvas.fillRect(kWaveformLeft, top + height + 4, width, 3, TFT_DARKGREY);
+    if (meter_width > 0) {
+        GetHAL().canvas.fillRect(kWaveformLeft, top + height + 4, meter_width, 3, TFT_GREEN);
+    }
+}
+
+void AppRecord::handle_key_event(const Keyboard::KeyEvent_t& key_event)
+{
+    if (key_event.keyCode == KEY_ENTER) {
+        if (_is_recording) {
+            stop_recording();
+        } else {
+            start_recording();
+        }
+        return;
+    }
+
+    if (key_event.keyCode == KEY_COMMA || key_event.keyCode == KEY_LEFT) {
+        if (set_record_gain(_record_gain - RECORD_GAIN_STEP, true) && !_is_recording) {
+            render_page();
+        }
+        return;
+    }
+
+    if (key_event.keyCode == KEY_SLASH || key_event.keyCode == KEY_RIGHT) {
+        if (set_record_gain(_record_gain + RECORD_GAIN_STEP, true) && !_is_recording) {
+            render_page();
+        }
+    }
+}
+
+bool AppRecord::handle_record_chunk()
+{
+    if (!GetHAL().mic.record(_record_chunk.data(), RECORD_CHUNK_SAMPLES, RECORD_SAMPLERATE)) {
+        return true;
+    }
+
+    int16_t peak = 0;
+    for (int16_t sample : _record_chunk) {
+        const int amplitude = std::abs(static_cast<int>(sample));
+        if (amplitude > peak) {
+            peak = static_cast<int16_t>(amplitude);
+        }
+    }
+    _last_peak_level = peak;
+
+    const size_t written = std::fwrite(_record_chunk.data(), sizeof(int16_t), _record_chunk.size(), _record_file);
+    if (written != _record_chunk.size()) {
+        std::snprintf(_status_message.data(), _status_message.size(), "Write failed: %s", std::strerror(errno));
+        return false;
+    }
+
+    _data_bytes_written += static_cast<uint32_t>(written * sizeof(int16_t));
+
+    const uint32_t now = GetHAL().millis();
+    if ((now - _last_flush_ms) >= RECORD_FLUSH_INTERVALMS) {
+        std::fflush(_record_file);
+        _last_flush_ms = now;
+    }
+
+    render_page();
     return true;
 }
 
-void AppRecord::render_page_recording()
+bool AppRecord::ensure_recordings_directory()
 {
-    GetHAL().canvas.fillScreen(THEME_COLOR_BG);
-    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-    GetHAL().canvas.setCursor(10, 0);
-    GetHAL().canvas.setTextSize(1);
-    GetHAL().canvas.print("Press enter to play");
-    GetHAL().pushCanvas();
-}
-
-void AppRecord::render_page_message(const char* message)
-{
-    GetHAL().canvas.fillScreen(THEME_COLOR_BG);
-    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-    GetHAL().canvas.setCursor(10, 0);
-    GetHAL().canvas.setTextSize(1);
-    GetHAL().canvas.print(message != nullptr ? message : "Audio unavailable");
-    GetHAL().pushCanvas();
-}
-
-void AppRecord::render_page_playing()
-{
-    GetHAL().canvas.fillScreen(THEME_COLOR_BG);
-    GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-    GetHAL().canvas.setCursor(10, 0);
-    GetHAL().canvas.setTextSize(1);
-    GetHAL().canvas.print("playing");
-    GetHAL().pushCanvas();
-}
-
-void AppRecord::render_waveform()
-{
-    if (!_rec_data) {
-        return;
+    struct stat info = {};
+    if (stat(kRecordingsDir, &info) == 0) {
+        return S_ISDIR(info.st_mode);
     }
 
-    auto data = &_rec_data[_rec_record_idx * RECORD_LENGTH];
-
-    if (GetHAL().mic.record(data, RECORD_LENGTH, RECORD_SAMPLERATE)) {
-        data = &_rec_data[_draw_record_idx * RECORD_LENGTH];
-
-        // 清除波形区域（避免重叠绘制）
-        int32_t waveform_top    = 15;  // 文字下方
-        int32_t waveform_height = GetHAL().canvas.height() - waveform_top;
-        GetHAL().canvas.fillRect(10, waveform_top, RECORD_LENGTH, waveform_height, THEME_COLOR_BG);
-
-        int32_t w = GetHAL().canvas.width();
-        if (w > RECORD_LENGTH) {
-            w = RECORD_LENGTH;
-        }
-
-        // 直接用录音数据画点 - 无需额外缓冲区
-        int32_t center_y           = waveform_top + waveform_height / 2;
-        static constexpr int shift = 8;  // 调整振幅显示
-
-        for (int32_t x = 0; x < w; ++x) {
-            // 计算波形点的y坐标
-            int32_t sample_value = data[x] >> shift;
-            int32_t y            = center_y + sample_value;
-
-            // 限制在波形区域内
-            if (y < waveform_top) y = waveform_top;
-            if (y >= waveform_top + waveform_height) y = waveform_top + waveform_height - 1;
-
-            // 画点 - 使用2x2像素块让点更明显
-            GetHAL().canvas.drawPixel(x + 10, y, TFT_WHITE);
-            GetHAL().canvas.drawPixel(x + 11, y, TFT_WHITE);
-            GetHAL().canvas.drawPixel(x + 10, y + 1, TFT_WHITE);
-            GetHAL().canvas.drawPixel(x + 11, y + 1, TFT_WHITE);
-        }
-
-        // 重绘UI文字
-        GetHAL().canvas.setCursor(10, 0);
-        GetHAL().canvas.setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-        GetHAL().canvas.setTextSize(1);
-        GetHAL().canvas.print("Press enter to play");
-
-        GetHAL().pushCanvas();
-
-        // 更新循环缓冲区索引
-        if (++_draw_record_idx >= RECORD_NUMBER) {
-            _draw_record_idx = 0;
-        }
-        if (++_rec_record_idx >= RECORD_NUMBER) {
-            _rec_record_idx = 0;
-        }
-    }
-}
-
-void AppRecord::handle_enter_key()
-{
-    if (_is_recording) {
-        start_playback();
-        return;
-    }
-
-    if (!start_recording()) {
-        render_page_message(_status_message.data());
-    }
-}
-
-bool AppRecord::ensure_record_buffer()
-{
-    if (_rec_data != nullptr) {
+    if (mkdir(kRecordingsDir, 0775) == 0) {
         return true;
     }
 
-    _rec_data = new (std::nothrow) int16_t[RECORD_SIZE]();
-    if (_rec_data != nullptr) {
-        return true;
-    }
-
-    set_status_message("Recorder buffer alloc failed");
+    std::snprintf(_status_message.data(), _status_message.size(), "mkdir failed: %s", std::strerror(errno));
     return false;
+}
+
+bool AppRecord::open_record_file()
+{
+    char path[_current_file_path.size()]      = {};
+    char file_name[_current_file_name.size()] = {};
+    if (!make_record_path(path, sizeof(path), file_name, sizeof(file_name))) {
+        return false;
+    }
+
+    _record_file = std::fopen(path, "wb+");
+    if (_record_file == nullptr) {
+        std::snprintf(_status_message.data(), _status_message.size(), "Open failed: %s", std::strerror(errno));
+        return false;
+    }
+
+    _data_bytes_written = 0;
+    if (!write_wav_header(0)) {
+        std::fclose(_record_file);
+        _record_file = nullptr;
+        set_status_message("WAV header write failed");
+        return false;
+    }
+
+    std::snprintf(_current_file_path.data(), _current_file_path.size(), "%s", path);
+    std::snprintf(_current_file_name.data(), _current_file_name.size(), "%s", file_name);
+    return true;
+}
+
+bool AppRecord::finalize_record_file()
+{
+    bool ok = write_wav_header(_data_bytes_written);
+    std::fflush(_record_file);
+    if (std::fclose(_record_file) != 0) {
+        ok = false;
+    }
+    _record_file = nullptr;
+    return ok;
+}
+
+bool AppRecord::write_wav_header(uint32_t data_size_bytes)
+{
+    if (_record_file == nullptr) {
+        return false;
+    }
+
+    uint8_t header[44] = {};
+    std::memcpy(header + 0, "RIFF", 4);
+    write_u32_le(header + 4, 36u + data_size_bytes);
+    std::memcpy(header + 8, "WAVE", 4);
+    std::memcpy(header + 12, "fmt ", 4);
+    write_u32_le(header + 16, 16);
+    write_u16_le(header + 20, 1);
+    write_u16_le(header + 22, 1);
+    write_u32_le(header + 24, RECORD_SAMPLERATE);
+    write_u32_le(header + 28, RECORD_SAMPLERATE * sizeof(int16_t));
+    write_u16_le(header + 32, sizeof(int16_t));
+    write_u16_le(header + 34, 16);
+    std::memcpy(header + 36, "data", 4);
+    write_u32_le(header + 40, data_size_bytes);
+
+    if (std::fseek(_record_file, 0, SEEK_SET) != 0) {
+        return false;
+    }
+    if (std::fwrite(header, 1, sizeof(header), _record_file) != sizeof(header)) {
+        return false;
+    }
+    return std::fseek(_record_file, 0, SEEK_END) == 0;
+}
+
+bool AppRecord::make_record_path(char* path, size_t path_size, char* file_name, size_t file_name_size)
+{
+    if (path == nullptr || file_name == nullptr || path_size == 0 || file_name_size == 0) {
+        set_status_message("Path buffer missing");
+        return false;
+    }
+
+    auto path_available = [](const char* candidate_path) {
+        struct stat info = {};
+        return stat(candidate_path, &info) != 0;
+    };
+
+    if (is_system_time_valid()) {
+        const std::time_t now = std::time(nullptr);
+        std::tm timeinfo      = {};
+        localtime_r(&now, &timeinfo);
+
+        for (int suffix = 0; suffix < 100; ++suffix) {
+            if (suffix == 0) {
+                std::snprintf(file_name, file_name_size, "rec_%04d%02d%02d_%02d%02d%02d.wav", timeinfo.tm_year + 1900,
+                              timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min,
+                              timeinfo.tm_sec);
+            } else {
+                std::snprintf(file_name, file_name_size, "rec_%04d%02d%02d_%02d%02d%02d_%02d.wav",
+                              timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour,
+                              timeinfo.tm_min, timeinfo.tm_sec, suffix);
+            }
+
+            std::snprintf(path, path_size, "%s/%s", kRecordingsDir, file_name);
+            if (path_available(path)) {
+                return true;
+            }
+        }
+    }
+
+    int32_t counter = GetHAL().getSettings().GetInt(kRecordCounterKey, 0);
+    if (counter < 0) {
+        counter = 0;
+    }
+
+    for (int attempt = 0; attempt < 1000; ++attempt) {
+        ++counter;
+        std::snprintf(file_name, file_name_size, "rec_%06ld.wav", static_cast<long>(counter));
+        std::snprintf(path, path_size, "%s/%s", kRecordingsDir, file_name);
+        if (path_available(path)) {
+            GetHAL().getSettings().SetInt(kRecordCounterKey, counter);
+            return true;
+        }
+    }
+
+    set_status_message("No free record filename");
+    return false;
+}
+
+int32_t AppRecord::load_record_gain() const
+{
+    const int32_t stored_gain = GetHAL().getSettings().GetInt(kRecordGainKey, RECORD_GAIN_DEFAULT);
+    return std::clamp(stored_gain, RECORD_GAIN_MIN, RECORD_GAIN_MAX);
+}
+
+bool AppRecord::set_record_gain(int32_t gain, bool persist)
+{
+    const int32_t clamped = std::clamp(gain, RECORD_GAIN_MIN, RECORD_GAIN_MAX);
+    if (clamped == _record_gain) {
+        return false;
+    }
+
+    _record_gain = clamped;
+    if (persist) {
+        GetHAL().getSettings().SetInt(kRecordGainKey, _record_gain);
+    }
+
+    if (_is_recording) {
+        set_status_message("Gain saved; applies next recording");
+    } else {
+        std::snprintf(_status_message.data(), _status_message.size(), "Gain set to %ld",
+                      static_cast<long>(_record_gain));
+    }
+    return true;
+}
+
+bool AppRecord::is_system_time_valid() const
+{
+    const std::time_t now = std::time(nullptr);
+    if (now <= 0) {
+        return false;
+    }
+
+    std::tm timeinfo = {};
+    localtime_r(&now, &timeinfo);
+    return (timeinfo.tm_year + 1900) >= 2024;
 }
 
 void AppRecord::clear_status_message()
