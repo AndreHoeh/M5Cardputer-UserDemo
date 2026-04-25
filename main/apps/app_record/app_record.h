@@ -24,6 +24,8 @@ public:
     void onClose() override;
 
 private:
+    // Mic_Class only exposes two async destination slots, so each chunk must be large
+    // enough that UI work and SD writes can keep the queue fed without audible gaps.
     static constexpr size_t RECORD_CHUNK_SAMPLES    = 1600;
     static constexpr size_t RECORD_PIPELINE_BUFFERS = 2;
     static constexpr size_t RECORD_SAMPLERATE       = 16000;

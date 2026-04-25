@@ -57,6 +57,7 @@ void apply_cardputer_adv_recording_codec_gain()
         return;
     }
 
+    // Cardputer ADV defaults the ES8311 ADC volume lower than the recorder wants.
     M5.In_I2C.writeRegister8(kEs8311Address, kEs8311AdcVolReg, kEs8311AdcVolMax, 400000);
 }
 }  // namespace
@@ -357,6 +358,8 @@ bool AppRecord::queue_record_chunk()
         return true;
     }
 
+    // Mic_Class::record is asynchronous: this only queues a destination buffer for the
+    // background mic task to fill later.
     const size_t tail_index = (_record_queue_head + _record_queue_count) % RECORD_PIPELINE_BUFFERS;
     if (!GetHAL().mic.record(_record_chunks[tail_index].data(), RECORD_CHUNK_SAMPLES, RECORD_SAMPLERATE)) {
         mclog::tagWarn(getAppInfo().name, "GetHAL().mic.record failed for {} samples at {} Hz",
@@ -382,6 +385,7 @@ bool AppRecord::flush_ready_record_chunks(bool force_all)
         mclog::tagWarn(getAppInfo().name, "recorder lagged; {} completed chunks ready for disk write", ready_buffers);
     }
 
+    // Only buffers that are no longer counted as pending are safe to write to SD.
     for (size_t ready_index = 0; ready_index < ready_buffers; ++ready_index) {
         const size_t chunk_index = _record_queue_head;
         const auto& chunk        = _record_chunks[chunk_index];
@@ -426,6 +430,8 @@ bool AppRecord::restart_record_pipeline(const char* reason)
         return false;
     }
 
+    // Restarting the mic drops any queued buffers, but it is better than letting the UI
+    // pretend recording is still progressing while no new audio reaches the file.
     if (GetHAL().mic.isEnabled()) {
         GetHAL().mic.end();
     }
@@ -457,6 +463,7 @@ bool AppRecord::handle_record_chunk()
         }
     }
 
+    // The pipeline is considered live once Mic_Class reports at least one in-flight buffer.
     const uint32_t now           = GetHAL().millis();
     const size_t pending_buffers = GetHAL().mic.isRecording();
     if (pending_buffers > RECORD_PIPELINE_BUFFERS) {
