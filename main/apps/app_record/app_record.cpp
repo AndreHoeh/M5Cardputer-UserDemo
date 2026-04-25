@@ -146,11 +146,18 @@ bool AppRecord::start_recording()
     GetHAL().mic.begin();
     apply_cardputer_adv_recording_codec_gain();
 
-    _record_start_ms    = GetHAL().millis();
-    _last_flush_ms      = _record_start_ms;
-    _data_bytes_written = 0;
-    _last_peak_level    = 0;
-    _is_recording       = true;
+    _record_start_ms        = GetHAL().millis();
+    _last_flush_ms          = _record_start_ms;
+    _data_bytes_written     = 0;
+    _last_peak_level        = 0;
+    _record_pipeline_active = false;
+    _record_queue_head      = 0;
+    _record_queue_count     = 0;
+    _waveform_chunk_index   = 0;
+    for (auto& chunk : _record_chunks) {
+        chunk.fill(0);
+    }
+    _is_recording = true;
     render_page();
     return true;
 }
@@ -160,17 +167,48 @@ bool AppRecord::stop_recording(const char* status_message)
     const bool was_recording = _is_recording;
     _is_recording            = false;
 
+    bool saw_inflight_during_stop = false;
+    if (_record_queue_count > 0) {
+        const uint32_t expected_ms = std::max<uint32_t>(
+            1u, static_cast<uint32_t>((RECORD_CHUNK_SAMPLES * 1000u + RECORD_SAMPLERATE - 1) / RECORD_SAMPLERATE));
+        const uint32_t prime_timeout_ms = std::max<uint32_t>(20u, expected_ms * 2u);
+        const uint32_t wait_start_ms    = GetHAL().millis();
+
+        while ((GetHAL().millis() - wait_start_ms) < prime_timeout_ms) {
+            if (GetHAL().mic.isRecording() > 0) {
+                saw_inflight_during_stop = true;
+                break;
+            }
+            GetHAL().delay(1);
+        }
+    }
+
     while (GetHAL().mic.isRecording()) {
+        saw_inflight_during_stop = true;
         GetHAL().delay(1);
     }
+
+    bool drained_ok = true;
+    if (_record_queue_count > 0) {
+        if (saw_inflight_during_stop || _record_pipeline_active) {
+            drained_ok = flush_ready_record_chunks(true);
+        } else {
+            mclog::tagWarn(getAppInfo().name, "dropping {} queued startup buffer(s) before mic pipeline became active",
+                           _record_queue_count);
+            _record_queue_head  = 0;
+            _record_queue_count = 0;
+        }
+    }
+
+    _record_pipeline_active = false;
 
     if (GetHAL().mic.isEnabled()) {
         GetHAL().mic.end();
     }
 
-    bool finalized_ok = true;
+    bool finalized_ok = drained_ok;
     if (_record_file != nullptr) {
-        finalized_ok = finalize_record_file();
+        finalized_ok = finalize_record_file() && finalized_ok;
     }
 
     if (audio::is_speaker_owned_by(audio::SpeakerOwner::Recorder)) {
@@ -263,9 +301,11 @@ void AppRecord::render_waveform(int32_t top, int32_t height)
     const int32_t center_y = top + (height / 2);
     GetHAL().canvas.drawFastHLine(kWaveformLeft, center_y, width, TFT_DARKGREY);
 
+    const auto& waveform_chunk = _record_chunks[_waveform_chunk_index];
+
     for (int32_t x = 0; x < width; ++x) {
         const size_t sample_index = static_cast<size_t>((static_cast<uint32_t>(x) * RECORD_CHUNK_SAMPLES) / width);
-        const int32_t sample      = static_cast<int32_t>(_record_chunk[sample_index]) / 512;
+        const int32_t sample      = static_cast<int32_t>(waveform_chunk[sample_index]) / 512;
         int32_t y                 = center_y - sample;
         if (y < top) {
             y = top;
@@ -309,28 +349,97 @@ void AppRecord::handle_key_event(const Keyboard::KeyEvent_t& key_event)
     }
 }
 
-bool AppRecord::handle_record_chunk()
+bool AppRecord::queue_record_chunk()
 {
-    if (!GetHAL().mic.record(_record_chunk.data(), RECORD_CHUNK_SAMPLES, RECORD_SAMPLERATE)) {
+    if (_record_queue_count >= RECORD_PIPELINE_BUFFERS) {
         return true;
     }
 
-    int16_t peak = 0;
-    for (int16_t sample : _record_chunk) {
-        const int amplitude = std::abs(static_cast<int>(sample));
-        if (amplitude > peak) {
-            peak = static_cast<int16_t>(amplitude);
-        }
-    }
-    _last_peak_level = peak;
-
-    const size_t written = std::fwrite(_record_chunk.data(), sizeof(int16_t), _record_chunk.size(), _record_file);
-    if (written != _record_chunk.size()) {
-        std::snprintf(_status_message.data(), _status_message.size(), "Write failed: %s", std::strerror(errno));
+    const size_t tail_index = (_record_queue_head + _record_queue_count) % RECORD_PIPELINE_BUFFERS;
+    if (!GetHAL().mic.record(_record_chunks[tail_index].data(), RECORD_CHUNK_SAMPLES, RECORD_SAMPLERATE)) {
+        mclog::tagWarn(getAppInfo().name, "GetHAL().mic.record failed for {} samples at {} Hz",
+                       static_cast<unsigned>(RECORD_CHUNK_SAMPLES), static_cast<unsigned>(RECORD_SAMPLERATE));
         return false;
     }
 
-    _data_bytes_written += static_cast<uint32_t>(written * sizeof(int16_t));
+    ++_record_queue_count;
+    return true;
+}
+
+bool AppRecord::flush_ready_record_chunks(bool force_all)
+{
+    size_t pending_buffers = force_all ? 0 : GetHAL().mic.isRecording();
+    if (pending_buffers > _record_queue_count) {
+        mclog::tagWarn(getAppInfo().name, "mic pending depth {} exceeds app queue depth {}", pending_buffers,
+                       _record_queue_count);
+        pending_buffers = _record_queue_count;
+    }
+
+    const size_t ready_buffers = _record_queue_count - pending_buffers;
+    if (ready_buffers > 1) {
+        mclog::tagWarn(getAppInfo().name, "recorder lagged; {} completed chunks ready for disk write", ready_buffers);
+    }
+
+    for (size_t ready_index = 0; ready_index < ready_buffers; ++ready_index) {
+        const size_t chunk_index = _record_queue_head;
+        const auto& chunk        = _record_chunks[chunk_index];
+
+        int16_t peak = 0;
+        for (int16_t sample : chunk) {
+            const int amplitude = std::abs(static_cast<int>(sample));
+            if (amplitude > peak) {
+                peak = static_cast<int16_t>(amplitude);
+            }
+        }
+        _last_peak_level      = peak;
+        _waveform_chunk_index = chunk_index;
+
+        const size_t written = std::fwrite(chunk.data(), sizeof(int16_t), chunk.size(), _record_file);
+        if (written != chunk.size()) {
+            mclog::tagWarn(getAppInfo().name, "short write: wrote {} of {} samples to {}", written, chunk.size(),
+                           _current_file_name.data());
+            std::snprintf(_status_message.data(), _status_message.size(), "Write failed: %s", std::strerror(errno));
+            return false;
+        }
+
+        _data_bytes_written += static_cast<uint32_t>(written * sizeof(int16_t));
+        _record_queue_head = (_record_queue_head + 1) % RECORD_PIPELINE_BUFFERS;
+        --_record_queue_count;
+    }
+
+    return true;
+}
+
+bool AppRecord::handle_record_chunk()
+{
+    if (_record_pipeline_active) {
+        if (!flush_ready_record_chunks(false)) {
+            return false;
+        }
+    }
+
+    while (_record_queue_count < RECORD_PIPELINE_BUFFERS) {
+        if (!queue_record_chunk()) {
+            return false;
+        }
+    }
+
+    const size_t pending_buffers = GetHAL().mic.isRecording();
+    if (!_record_pipeline_active) {
+        if (pending_buffers > 0) {
+            _record_pipeline_active = true;
+        } else {
+            render_page();
+            return true;
+        }
+    }
+
+    if (pending_buffers == 0 && _record_queue_count == RECORD_PIPELINE_BUFFERS) {
+        _record_pipeline_active = false;
+        mclog::tagWarn(getAppInfo().name, "mic pipeline drained completely; re-priming async capture queue");
+        render_page();
+        return true;
+    }
 
     const uint32_t now = GetHAL().millis();
     if ((now - _last_flush_ms) >= RECORD_FLUSH_INTERVALMS) {

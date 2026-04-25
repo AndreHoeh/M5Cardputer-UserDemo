@@ -25,6 +25,7 @@ public:
 
 private:
     static constexpr size_t RECORD_CHUNK_SAMPLES      = 200;
+    static constexpr size_t RECORD_PIPELINE_BUFFERS   = 2;
     static constexpr size_t RECORD_SAMPLERATE         = 16000;
     static constexpr int32_t RECORD_GAIN_DEFAULT      = 16;
     static constexpr int32_t RECORD_GAIN_MIN          = 1;
@@ -39,8 +40,12 @@ private:
     int32_t _record_gain         = RECORD_GAIN_DEFAULT;
     int16_t _last_peak_level     = 0;
     bool _is_recording           = false;
+    bool _record_pipeline_active = false;
     std::FILE* _record_file      = nullptr;
-    std::array<int16_t, RECORD_CHUNK_SAMPLES> _record_chunk{};
+    size_t _record_queue_head    = 0;
+    size_t _record_queue_count   = 0;
+    size_t _waveform_chunk_index = 0;
+    std::array<std::array<int16_t, RECORD_CHUNK_SAMPLES>, RECORD_PIPELINE_BUFFERS> _record_chunks{};
     std::array<char, 96> _current_file_path{};
     std::array<char, 48> _current_file_name{};
     std::array<char, 64> _status_message{};
@@ -49,6 +54,8 @@ private:
     void render_waveform(int32_t top, int32_t height);
     void handle_key_event(const Keyboard::KeyEvent_t& key_event);
     bool handle_record_chunk();
+    bool queue_record_chunk();
+    bool flush_ready_record_chunks(bool force_all);
     bool start_recording();
     bool stop_recording(const char* status_message = nullptr);
     bool ensure_recordings_directory();
