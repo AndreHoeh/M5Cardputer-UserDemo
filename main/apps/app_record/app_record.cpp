@@ -142,7 +142,7 @@ bool AppRecord::start_recording()
 
     auto cfg               = GetHAL().mic.config();
     cfg.magnification      = static_cast<std::uint8_t>(_record_gain);
-    cfg.noise_filter_level = 0;
+    cfg.noise_filter_level = 2;
     GetHAL().mic.config(cfg);
     GetHAL().mic.begin();
     apply_cardputer_adv_recording_codec_gain();
