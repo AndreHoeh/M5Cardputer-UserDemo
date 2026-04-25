@@ -148,8 +148,10 @@ bool AppRecord::start_recording()
 
     _record_start_ms        = GetHAL().millis();
     _last_flush_ms          = _record_start_ms;
+    _last_chunk_progress_ms = _record_start_ms;
     _data_bytes_written     = 0;
     _last_peak_level        = 0;
+    _stall_recovery_count   = 0;
     _record_pipeline_active = false;
     _record_queue_head      = 0;
     _record_queue_count     = 0;
@@ -403,10 +405,41 @@ bool AppRecord::flush_ready_record_chunks(bool force_all)
         }
 
         _data_bytes_written += static_cast<uint32_t>(written * sizeof(int16_t));
-        _record_queue_head = (_record_queue_head + 1) % RECORD_PIPELINE_BUFFERS;
+        _last_chunk_progress_ms = GetHAL().millis();
+        _record_queue_head      = (_record_queue_head + 1) % RECORD_PIPELINE_BUFFERS;
         --_record_queue_count;
     }
 
+    return true;
+}
+
+bool AppRecord::restart_record_pipeline(const char* reason)
+{
+    ++_stall_recovery_count;
+    mclog::tagWarn(getAppInfo().name,
+                   "restarting mic pipeline after stall (attempt {}): {} | queued={} bytes={} pending={}",
+                   static_cast<unsigned>(_stall_recovery_count), reason ? reason : "unknown", _record_queue_count,
+                   static_cast<unsigned long>(_data_bytes_written), GetHAL().mic.isRecording());
+
+    if (_stall_recovery_count > 3) {
+        set_status_message("Mic stalled repeatedly");
+        return false;
+    }
+
+    if (GetHAL().mic.isEnabled()) {
+        GetHAL().mic.end();
+    }
+
+    if (!GetHAL().mic.begin()) {
+        set_status_message("Mic restart failed");
+        return false;
+    }
+    apply_cardputer_adv_recording_codec_gain();
+
+    _record_pipeline_active = false;
+    _record_queue_head      = 0;
+    _record_queue_count     = 0;
+    _last_chunk_progress_ms = GetHAL().millis();
     return true;
 }
 
@@ -424,7 +457,13 @@ bool AppRecord::handle_record_chunk()
         }
     }
 
+    const uint32_t now           = GetHAL().millis();
     const size_t pending_buffers = GetHAL().mic.isRecording();
+    if (pending_buffers > RECORD_PIPELINE_BUFFERS) {
+        mclog::tagWarn(getAppInfo().name, "unexpected pending depth {} with queue depth {}", pending_buffers,
+                       RECORD_PIPELINE_BUFFERS);
+    }
+
     if (!_record_pipeline_active) {
         if (pending_buffers > 0) {
             _record_pipeline_active = true;
@@ -441,7 +480,19 @@ bool AppRecord::handle_record_chunk()
         return true;
     }
 
-    const uint32_t now = GetHAL().millis();
+    if ((now - _last_chunk_progress_ms) >= RECORD_STALL_TIMEOUTMS) {
+        const bool queue_full_without_progress =
+            (_record_queue_count == RECORD_PIPELINE_BUFFERS) && (pending_buffers >= _record_queue_count);
+        if (queue_full_without_progress) {
+            if (!restart_record_pipeline("no completed chunk reached app writer")) {
+                return false;
+            }
+            set_status_message("Mic stall recovered");
+            render_page();
+            return true;
+        }
+    }
+
     if ((now - _last_flush_ms) >= RECORD_FLUSH_INTERVALMS) {
         std::fflush(_record_file);
         _last_flush_ms = now;
